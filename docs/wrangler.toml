@@ -1,0 +1,7 @@
+name = "lam-license"
+main = "worker.js"
+compatibility_date = "2024-03-12"
+
+[[kv_namespaces]]
+binding = "KV"
+id = "d8dc8a8cf9394185a3539c50d558c97e"

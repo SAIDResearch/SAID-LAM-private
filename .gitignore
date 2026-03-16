@@ -1,0 +1,15 @@
+/target/
+/dist/
+__pycache__/
+.venv/
+*.pyc
+*.pyo
+*.egg-info/
+*.so
+# Keep the compiled lam_candle.so for local GPU testing (dev only, not for clients)
+!said_lam/lam_candle.so
+*.dylib
+*.pdb
+*.dll
+.DS_Store
+.env

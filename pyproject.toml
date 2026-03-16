@@ -1,0 +1,44 @@
+[build-system]
+requires = ["maturin>=1.4,<2.0", "patchelf"]
+build-backend = "maturin"
+
+[project]
+name = "said-lam"
+version = "1.0.0"
+description = "LAM (Linear Attention Models) — Deterministic recall with SAID Crystalline Attention. SAID-LAM-v1 is Linear Attention Memory."
+readme = "README.md"
+license = { text = "Proprietary" }
+authors = [{ name = "SAIDResearch", email = "research@saidhome.ai" }]
+requires-python = ">=3.8"
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "Intended Audience :: Science/Research",
+    "License :: Other/Proprietary License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.8",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Rust",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+]
+keywords = ["lam", "linear-attention-memory", "sca", "said-crystalline-attention", "embeddings", "deterministic-retrieval", "mteb", "niah"]
+dependencies = [
+    "numpy>=1.20",
+    "huggingface_hub>=0.20",
+]
+
+[project.optional-dependencies]
+mteb = ["mteb>=1.0"]
+dev = ["mteb>=1.0", "pytest>=7.0", "psutil"]
+
+[project.urls]
+Homepage = "https://saidhome.ai"
+Repository = "https://github.com/SAIDResearch/SAID-LAM"
+
+[tool.maturin]
+module-name = "lam_candle"
+python-packages = ["said_lam", "lam"]
+features = ["pyo3/extension-module"]

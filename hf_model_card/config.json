@@ -1,0 +1,29 @@
+{
+    "model_type": "lam",
+    "model_category": "LAM (Linear Attention Models) — SAID-LAM-v1: Linear Attention Memory",
+    "architectures": [
+        "LAM"
+    ],
+    "attention_mechanism": "Hierarchical DeltaNet (Linear Attention with Dual-State Memory)",
+    "recall_engine": "SCA (Said Crystalline Attention)",
+    "vocab_size": 30522,
+    "hidden_size": 384,
+    "num_hidden_layers": 6,
+    "num_attention_heads": 12,
+    "intermediate_size": 1536,
+    "max_position_embeddings": 32768,
+    "embedding_dim": 384,
+    "n_parameters": 23848788,
+    "memory_usage_mb": 90,
+    "framework": "Candle",
+    "runtime": "Pure Rust (no PyTorch dependency)",
+    "distilled_from": "all-MiniLM-L6-v2",
+    "distillation": true,
+    "linear_attention": true,
+    "hierarchical_deltanet": true,
+    "dual_state_memory": true,
+    "complexity": "O(n)",
+    "license": "apache-2.0",
+    "license_note": "Apache 2.0 for model weights; Proprietary for compiled software",
+    "reference": "https://saidhome.ai"
+}

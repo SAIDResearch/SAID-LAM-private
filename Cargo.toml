@@ -1,0 +1,64 @@
+[package]
+name = "said-lam"
+version = "1.0.0"
+edition = "2021"
+description = "SAID-LAM: Linear Attention Memory — first in the LAM (Linear Attention Models) family, 384-dim semantic embeddings with O(n) complexity"
+license = "Proprietary"
+authors = ["SAIDResearch <research@saidhome.ai>"]
+repository = "https://github.com/said-research/SAID-LAM"
+keywords = ["embeddings", "retrieval", "linear-attention", "mteb"]
+
+[lib]
+name = "lam_candle"
+crate-type = ["cdylib"]
+
+[dependencies]
+pyo3 = { version = "0.22", features = ["extension-module"] }
+numpy = "0.22"
+ndarray = "0.16"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+regex = "1.10"
+sha2 = "0.10"
+hex = "0.4"
+
+# Candle ML (Pure Rust neural networks) — NO default GPU features
+# GPU is opt-in via "cuda" or "metal" feature flags
+candle-core = "0.8"
+candle-nn = "0.8"
+safetensors = "0.4"
+tokenizers = "0.20"
+
+# Compressed bitmaps for memory-efficient token sets
+roaring = "0.10"
+
+# Crystalline + sca_dropin (quantized search, HDC, routing)
+rayon = "1.11"
+ahash = "0.8"
+simsimd = "6.0"
+bitvec = "1.0"
+rand = "0.8"
+
+# HTTP client for license validation (Cloudflare Worker)
+ureq = { version = "3", features = ["json"] }
+
+# Memory-mapped file storage (optional, for production deployments)
+memmap2 = { version = "0.9", optional = true }
+half = { version = "2.4", optional = true }
+
+[features]
+# CPU by default — works everywhere out of the box
+# GPU users: maturin build --release --features cuda
+default = []
+cuda = ["candle-core/cuda", "candle-nn/cuda"]
+metal = ["candle-core/metal", "candle-nn/metal"]
+mmap = ["memmap2", "half"]
+
+[profile.release]
+opt-level = 3
+lto = true
+codegen-units = 1
+strip = true
+
+[build-dependencies]
+pyo3-build-config = "0.22"

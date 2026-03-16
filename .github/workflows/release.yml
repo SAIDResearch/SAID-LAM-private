@@ -1,0 +1,272 @@
+name: Build and Release
+
+on:
+  release:
+    types: [created]
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  # ──────────────────────────────────────────────────────────────
+  # CPU wheels — work everywhere, no GPU required
+  # ──────────────────────────────────────────────────────────────
+  build-cpu:
+    name: CPU · ${{ matrix.target }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+          - os: ubuntu-latest
+            target: aarch64-unknown-linux-gnu
+          - os: macos-13
+            target: x86_64-apple-darwin
+          - os: macos-latest
+            target: aarch64-apple-darwin
+          - os: windows-latest
+            target: x86_64-pc-windows-msvc
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Setup Python 3.10
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+
+      - name: Setup Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - name: Install Maturin
+        run: pip install maturin
+
+      - name: Install cross-compilation tools (Linux ARM64)
+        if: matrix.target == 'aarch64-unknown-linux-gnu'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gcc-aarch64-linux-gnu
+
+      # CPU build — builds for Python 3.10, 3.11, 3.12
+      - name: Build CPU wheels
+        run: maturin build --release --target ${{ matrix.target }} --interpreter python3.10 python3.11 python3.12 --out dist
+
+      - name: Upload wheels
+        uses: actions/upload-artifact@v4
+        with:
+          name: wheels-cpu-${{ matrix.target }}
+          path: dist/*.whl
+
+  # ──────────────────────────────────────────────────────────────
+  # CUDA wheels — Linux x86_64 only (primary GPU platform)
+  # ──────────────────────────────────────────────────────────────
+  build-cuda:
+    name: CUDA · x86_64-linux
+    runs-on: ubuntu-latest
+    container:
+      image: nvidia/cuda:12.1.1-devel-ubuntu22.04
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install system deps
+        run: |
+          apt-get update
+          apt-get install -y python3 python3-pip python3-venv curl gcc pkg-config libssl-dev
+          curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
+          echo "$HOME/.cargo/bin" >> $GITHUB_PATH
+
+      - name: Install Maturin
+        run: pip3 install maturin
+
+      # CUDA build — --features cuda enables candle GPU support
+      - name: Build CUDA wheel
+        run: |
+          . "$HOME/.cargo/env"
+          maturin build --release --features cuda --out dist
+
+      - name: Upload wheels
+        uses: actions/upload-artifact@v4
+        with:
+          name: wheels-cuda-x86_64-linux
+          path: dist/*.whl
+
+  # ──────────────────────────────────────────────────────────────
+  # Metal wheels — macOS Apple Silicon GPU
+  # ──────────────────────────────────────────────────────────────
+  build-metal:
+    name: Metal · aarch64-apple-darwin
+    runs-on: macos-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install Maturin
+        run: pip install maturin
+
+      # Metal build — macOS GPU acceleration
+      - name: Build Metal wheel
+        run: maturin build --release --features metal --out dist
+
+      - name: Upload wheels
+        uses: actions/upload-artifact@v4
+        with:
+          name: wheels-metal-aarch64-apple-darwin
+          path: dist/*.whl
+
+  # ──────────────────────────────────────────────────────────────
+  # NO SOURCE DISTRIBUTION (sdist)
+  # Rust source is proprietary — only pre-compiled wheels are published
+  # ──────────────────────────────────────────────────────────────
+
+  # ──────────────────────────────────────────────────────────────
+  # Publish to PyPI (wheels only, no source)
+  # ──────────────────────────────────────────────────────────────
+  publish:
+    name: Publish to PyPI
+    needs: [build-cpu, build-cuda, build-metal]
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/')
+
+    steps:
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+
+      - name: List all artifacts
+        run: ls -lh dist/
+
+      - name: Publish to PyPI
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          password: ${{ secrets.PYPI_API_TOKEN }}
+          packages-dir: dist/
+
+  # ──────────────────────────────────────────────────────────────
+  # Publish to TestPyPI (for release candidates: v*-rc*)
+  # ──────────────────────────────────────────────────────────────
+  publish-test:
+    name: Publish to TestPyPI
+    needs: [build-cpu, build-cuda, build-metal]
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/v') && contains(github.ref, 'rc')
+
+    steps:
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+
+      - name: List all artifacts
+        run: ls -lh dist/
+
+      - name: Publish to TestPyPI
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          password: ${{ secrets.TEST_PYPI_API_TOKEN }}
+          repository-url: https://test.pypi.org/legacy/
+          packages-dir: dist/
+
+  # ──────────────────────────────────────────────────────────────
+  # GitHub Release — attach all built wheels to the version-tag release
+  # ──────────────────────────────────────────────────────────────
+  github-release:
+    name: GitHub Release
+    needs: [build-cpu, build-cuda, build-metal]
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/')
+
+    steps:
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+
+      - name: Create GitHub Release and upload wheels
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/*.whl
+          generate_release_notes: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  # ──────────────────────────────────────────────────────────────
+  # Smoke test — verify the wheel installs and imports correctly
+  # ──────────────────────────────────────────────────────────────
+  smoke-test:
+    name: Smoke test · ${{ matrix.os }}
+    needs: [build-cpu]
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+          - os: macos-latest
+            target: aarch64-apple-darwin
+          - os: windows-latest
+            target: x86_64-pc-windows-msvc
+
+    steps:
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Download wheel
+        uses: actions/download-artifact@v4
+        with:
+          name: wheels-cpu-${{ matrix.target }}
+          path: dist
+
+      - name: Install wheel
+        run: pip install dist/*.whl
+
+      - name: Verify import and basic functionality
+        run: |
+          python -c "
+          from lam_candle import LamEngine, TIER_FREE, TIER_BETA
+          assert TIER_FREE == 1
+          assert TIER_BETA == 2
+          engine = LamEngine()
+          engine.index('test', 'Hello world')
+          assert engine.doc_count() == 1
+          results = engine.search('Hello')
+          print(f'Smoke test passed: {len(results)} results')
+          "
+
+      - name: Verify wrapper imports
+        run: |
+          python -c "import said_lam; print('said_lam OK')"
+          python -c "import lam; print('lam OK')"

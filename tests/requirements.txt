@@ -1,0 +1,18 @@
+# SAID-LAM Test Suite Dependencies
+# =================================
+# Install with: pip install -r requirements.txt
+# The said-lam package must also be installed (pip install said-lam)
+
+# Dataset loading (for STS-B benchmark)
+datasets>=2.14.0
+
+# Scientific computing
+numpy>=1.20.0
+scipy>=1.10.0
+
+# Visualization (optional — tests run without these)
+matplotlib>=3.7.0
+seaborn>=0.12.0
+
+# System monitoring (optional)
+psutil>=5.9.0

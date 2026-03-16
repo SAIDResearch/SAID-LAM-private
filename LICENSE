@@ -1,0 +1,35 @@
+SAID-LAM Software License
+
+Copyright (c) 2025-2026 Said Research (SaidHome.ai)
+All rights reserved.
+
+PROPRIETARY SOFTWARE LICENSE
+
+This software and associated documentation files (the "Software") are the
+proprietary property of Said Research. The Software is licensed, not sold.
+
+Permission is hereby granted to any person obtaining a copy of this Software
+through authorized distribution channels (PyPI, GitHub) to:
+
+  1. USE the Software for personal, academic, or commercial purposes
+  2. INSTALL the Software via pip or from source
+  3. INTEGRATE the Software into applications and services
+
+The following restrictions apply:
+
+  1. You may NOT modify, reverse engineer, decompile, or disassemble the
+     compiled binary components of the Software
+  2. You may NOT redistribute the Software outside of its original package
+  3. You may NOT remove or alter any proprietary notices
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.
+
+For licensing inquiries: research@saidhome.ai
+Website: https://saidhome.ai
+
+---
+
+NOTE: Model weights (model.safetensors) are licensed separately under
+Apache License 2.0. See LICENSE-MODEL for details.
