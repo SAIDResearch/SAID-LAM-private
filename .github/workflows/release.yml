@@ -1,5 +1,9 @@
 name: Build and Release
 
+# macOS: GitHub-hosted macos-14 and macos-latest are ARM-only. Intel (x86_64-apple-darwin)
+# would require cross-compile or paid larger runners; we ship only aarch64 for macOS.
+# Linux aarch64: cross-compile on ubuntu-latest with gcc/g++-aarch64-linux-gnu + libc.
+
 on:
   release:
     types: [created]
@@ -26,8 +30,6 @@ jobs:
             target: x86_64-unknown-linux-gnu
           - os: ubuntu-latest
             target: aarch64-unknown-linux-gnu
-          - os: macos-14
-            target: x86_64-apple-darwin
           - os: macos-latest
             target: aarch64-apple-darwin
           - os: windows-latest
@@ -63,12 +65,19 @@ jobs:
         if: matrix.target == 'aarch64-unknown-linux-gnu'
         run: |
           sudo apt-get update
-          sudo apt-get install -y gcc-aarch64-linux-gnu
+          sudo apt-get install -y \
+            gcc-aarch64-linux-gnu g++-aarch64-linux-gnu \
+            binutils-aarch64-linux-gnu \
+            libc6-dev-arm64-cross
 
       # CPU build — builds for Python 3.10, 3.11, 3.12
+      # aarch64: cc-rs / esaxx-rs need CC, CXX, AR, linker set for cross-compile
       - name: Build CPU wheels
         env:
           CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER: aarch64-linux-gnu-gcc
+          CC_aarch64_unknown_linux_gnu: aarch64-linux-gnu-gcc
+          CXX_aarch64_unknown_linux_gnu: aarch64-linux-gnu-g++
+          AR_aarch64_unknown_linux_gnu: aarch64-linux-gnu-ar
         run: maturin build --release --target ${{ matrix.target }} --interpreter python3.10 python3.11 python3.12 --out dist
 
       - name: Upload wheels
@@ -78,13 +87,15 @@ jobs:
           path: dist/*.whl
 
   # ──────────────────────────────────────────────────────────────
-  # CUDA wheels — Linux x86_64 only (primary GPU platform)
+  # CUDA wheels — Linux x86_64 only (no GPU in runner: stub nvidia-smi + CUDA_COMPUTE_CAP)
   # ──────────────────────────────────────────────────────────────
   build-cuda:
     name: CUDA · x86_64-linux
     runs-on: ubuntu-latest
     container:
       image: nvidia/cuda:12.1.1-devel-ubuntu22.04
+    env:
+      CUDA_COMPUTE_CAP: "80"
 
     steps:
       - uses: actions/checkout@v4
@@ -99,13 +110,21 @@ jobs:
       - name: Install Maturin
         run: pip3 install maturin
 
+      # Stub nvidia-smi for CI (no GPU in runner); output format expected by bindgen_cuda
+      - name: Stub nvidia-smi (compute_cap 8.0 for sm_80)
+        run: |
+          mkdir -p "$HOME/bin"
+          printf '%s\n' '#!/bin/sh' 'echo "compute_cap"; echo "8.0"' > "$HOME/bin/nvidia-smi"
+          chmod +x "$HOME/bin/nvidia-smi"
+          echo "$HOME/bin" >> $GITHUB_PATH
+          echo "$HOME/bin" >> $GITHUB_ENV
+          echo "PATH=$HOME/bin:$PATH" >> $GITHUB_ENV
+
       # CUDA build — --features cuda enables candle GPU support
-      # CUDA_COMPUTE_CAP avoids nvidia-smi (no GPU in GitHub-hosted runner)
       - name: Build CUDA wheel
-        env:
-          CUDA_COMPUTE_CAP: "80"
         run: |
           . "$HOME/.cargo/env"
+          export PATH="$HOME/bin:$PATH"
           maturin build --release --features cuda --out dist
 
       - name: Upload wheels

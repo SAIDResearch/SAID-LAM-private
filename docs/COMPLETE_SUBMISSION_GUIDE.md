@@ -324,11 +324,13 @@ git push origin main --tags
 ```
 
 Then the workflow (in the **private** repo) will:
-1. Build 15 CPU wheels (5 platforms × 3 Python versions)
-2. Build 1 CUDA wheel (Linux x86_64)
+1. Build 12 CPU wheels (4 platforms × 3 Python versions: Linux x86_64, Linux aarch64, macOS Apple Silicon, Windows)
+2. Build 1 CUDA wheel (Linux x86_64; CI uses stub nvidia-smi + CUDA_COMPUTE_CAP)
 3. Build 1 Metal wheel (macOS Apple Silicon)
 4. Run smoke tests
-5. Publish wheels to PyPI (and optionally create a GitHub Release with assets in the **private** repo)
+5. Publish wheels to PyPI (and create a GitHub Release with assets)
+
+**Note:** macOS Intel (x86_64) wheels are not built in CI (GitHub-hosted macOS runners are ARM-only). Build them locally if needed.
 
 ### What PyPI Receives
 
@@ -340,9 +342,6 @@ PyPI: said-lam 1.0.0
 ├── said_lam-1.0.0-cp310-cp310-manylinux_2_17_aarch64.whl    # Linux ARM64
 ├── said_lam-1.0.0-cp311-cp311-manylinux_2_17_aarch64.whl
 ├── said_lam-1.0.0-cp312-cp312-manylinux_2_17_aarch64.whl
-├── said_lam-1.0.0-cp310-cp310-macosx_10_12_x86_64.whl       # macOS Intel
-├── said_lam-1.0.0-cp311-cp311-macosx_10_12_x86_64.whl
-├── said_lam-1.0.0-cp312-cp312-macosx_10_12_x86_64.whl
 ├── said_lam-1.0.0-cp310-cp310-macosx_11_0_arm64.whl         # macOS Apple Silicon
 ├── said_lam-1.0.0-cp311-cp311-macosx_11_0_arm64.whl
 ├── said_lam-1.0.0-cp312-cp312-macosx_11_0_arm64.whl
