@@ -1,9 +1,5 @@
 name: Build and Release
 
-# macOS: GitHub-hosted macos-14 and macos-latest are ARM-only. Intel (x86_64-apple-darwin)
-# would require cross-compile or paid larger runners; we ship only aarch64 for macOS.
-# Linux aarch64: cross-compile on ubuntu-latest with gcc/g++-aarch64-linux-gnu + libc.
-
 on:
   release:
     types: [created]
@@ -38,15 +34,15 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Setup Python 3.11
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.11'
-
       - name: Setup Python 3.10
         uses: actions/setup-python@v5
         with:
           python-version: '3.10'
+
+      - name: Setup Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
 
       - name: Setup Python 3.12
         uses: actions/setup-python@v5
@@ -70,8 +66,6 @@ jobs:
             binutils-aarch64-linux-gnu \
             libc6-dev-arm64-cross
 
-      # CPU build — builds for Python 3.10, 3.11, 3.12
-      # aarch64: cc-rs / esaxx-rs need CC, CXX, AR, linker set for cross-compile
       - name: Build CPU wheels
         env:
           CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER: aarch64-linux-gnu-gcc
@@ -87,7 +81,7 @@ jobs:
           path: dist/*.whl
 
   # ──────────────────────────────────────────────────────────────
-  # CUDA wheels — Linux x86_64 only (no GPU in runner: stub nvidia-smi + CUDA_COMPUTE_CAP)
+  # CUDA wheels — Linux x86_64 only
   # ──────────────────────────────────────────────────────────────
   build-cuda:
     name: CUDA · x86_64-linux
@@ -96,39 +90,67 @@ jobs:
       image: nvidia/cuda:12.1.1-devel-ubuntu22.04
     env:
       CUDA_COMPUTE_CAP: "80"
+      # Prevent pip "externally-managed-environment" errors in container
+      PIP_BREAK_SYSTEM_PACKAGES: "1"
 
     steps:
       - uses: actions/checkout@v4
 
-      - name: Install system deps
+      - name: Install system deps + Python
         run: |
           apt-get update
-          apt-get install -y python3 python3-pip python3-venv curl gcc pkg-config libssl-dev
+          apt-get install -y \
+            software-properties-common curl gcc pkg-config libssl-dev
+          # Add deadsnakes for multiple Python versions
+          add-apt-repository -y ppa:deadsnakes/ppa
+          apt-get update
+          apt-get install -y \
+            python3.10 python3.10-dev python3.10-venv \
+            python3.11 python3.11-dev python3.11-venv \
+            python3.12 python3.12-dev python3.12-venv \
+            python3-pip
+
+      - name: Install Rust
+        run: |
           curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
           echo "$HOME/.cargo/bin" >> $GITHUB_PATH
 
       - name: Install Maturin
         run: pip3 install maturin
 
-      # Stub nvidia-smi for CI (no GPU). Cargo build script must see it on PATH.
-      - name: Stub nvidia-smi (compute_cap 8.0 for sm_80)
+      # Stub nvidia-smi — match the CSV format candle/bindgen_cuda expects
+      # from `nvidia-smi --query-gpu=compute_cap --format=csv,noheader`
+      - name: Stub nvidia-smi
         run: |
-          export Nvidia_smi_stub="/tmp/nvidia-smi-stub"
-          mkdir -p "$Nvidia_smi_stub"
-          printf '%s\n' '#!/bin/sh' 'echo "compute_cap"; echo "8.0"' > "$Nvidia_smi_stub/nvidia-smi"
-          chmod +x "$Nvidia_smi_stub/nvidia-smi"
-          echo "Nvidia_smi_stub=$Nvidia_smi_stub" >> $GITHUB_ENV
-          "$Nvidia_smi_stub/nvidia-smi"
+          mkdir -p /usr/local/bin
+          cat > /usr/local/bin/nvidia-smi << 'STUB'
+          #!/bin/sh
+          # If called with --query-gpu, return CSV format
+          case "$*" in
+            *--query-gpu*)
+              echo "8.0"
+              ;;
+            *)
+              # Default output mimicking a basic nvidia-smi call
+              cat <<EOF
+          +-----------------------------------------------------------------------------+
+          | NVIDIA-SMI (stub)    Driver Version: 000.00       CUDA Version: 12.1        |
+          +-----------------------------------------------------------------------------+
+          | GPU  Name        Persistence-M| Bus-Id        Disp.A | Volatile Uncorr. ECC |
+          |   0  Stub GPU           Off   | 00000000:00:00.0 Off |                    0 |
+          +-----------------------------------------------------------------------------+
+          EOF
+              ;;
+          esac
+          STUB
+          chmod +x /usr/local/bin/nvidia-smi
 
-      # CUDA build — --features cuda enables candle GPU support
-      - name: Build CUDA wheel
-        env:
-          CUDA_COMPUTE_CAP: "80"
+      - name: Build CUDA wheels
         run: |
           . "$HOME/.cargo/env"
-          export PATH="$Nvidia_smi_stub:$PATH"
-          which nvidia-smi && nvidia-smi
-          maturin build --release --features cuda --out dist
+          maturin build --release --features cuda \
+            --interpreter python3.10 python3.11 python3.12 \
+            --out dist
 
       - name: Upload wheels
         uses: actions/upload-artifact@v4
@@ -146,10 +168,20 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Setup Python
+      - name: Setup Python 3.10
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+
+      - name: Setup Python 3.11
         uses: actions/setup-python@v5
         with:
           python-version: '3.11'
+
+      - name: Setup Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
 
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
@@ -157,9 +189,17 @@ jobs:
       - name: Install Maturin
         run: pip install maturin
 
-      # Metal build — macOS GPU acceleration
-      - name: Build Metal wheel
-        run: maturin build --release --features metal --out dist
+      # Verify Metal SDK is available (Xcode ships it)
+      - name: Verify Metal availability
+        run: |
+          xcrun --sdk macosx --show-sdk-path
+          ls "$(xcrun --sdk macosx --show-sdk-path)/System/Library/Frameworks/Metal.framework" || echo "WARNING: Metal.framework not found"
+
+      - name: Build Metal wheels
+        run: |
+          maturin build --release --features metal \
+            --interpreter python3.10 python3.11 python3.12 \
+            --out dist
 
       - name: Upload wheels
         uses: actions/upload-artifact@v4
@@ -168,12 +208,7 @@ jobs:
           path: dist/*.whl
 
   # ──────────────────────────────────────────────────────────────
-  # NO SOURCE DISTRIBUTION (sdist)
-  # Rust source is proprietary — only pre-compiled wheels are published
-  # ──────────────────────────────────────────────────────────────
-
-  # ──────────────────────────────────────────────────────────────
-  # Publish to PyPI (wheels only, no source)
+  # Publish to PyPI
   # ──────────────────────────────────────────────────────────────
   publish:
     name: Publish to PyPI
@@ -198,7 +233,7 @@ jobs:
           packages-dir: dist/
 
   # ──────────────────────────────────────────────────────────────
-  # Publish to TestPyPI (for release candidates: v*-rc*)
+  # Publish to TestPyPI (release candidates: v*-rc*)
   # ──────────────────────────────────────────────────────────────
   publish-test:
     name: Publish to TestPyPI
@@ -224,7 +259,7 @@ jobs:
           packages-dir: dist/
 
   # ──────────────────────────────────────────────────────────────
-  # GitHub Release — attach all built wheels to the version-tag release
+  # GitHub Release
   # ──────────────────────────────────────────────────────────────
   github-release:
     name: GitHub Release
@@ -248,7 +283,7 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
   # ──────────────────────────────────────────────────────────────
-  # Smoke test — verify the wheel installs and imports correctly
+  # Smoke test
   # ──────────────────────────────────────────────────────────────
   smoke-test:
     name: Smoke test · ${{ matrix.os }}
