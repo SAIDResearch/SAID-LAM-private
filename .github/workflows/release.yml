@@ -26,7 +26,7 @@ jobs:
             target: x86_64-unknown-linux-gnu
           - os: ubuntu-latest
             target: aarch64-unknown-linux-gnu
-          - os: macos-13
+          - os: macos-14
             target: x86_64-apple-darwin
           - os: macos-latest
             target: aarch64-apple-darwin
@@ -67,6 +67,8 @@ jobs:
 
       # CPU build — builds for Python 3.10, 3.11, 3.12
       - name: Build CPU wheels
+        env:
+          CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER: aarch64-linux-gnu-gcc
         run: maturin build --release --target ${{ matrix.target }} --interpreter python3.10 python3.11 python3.12 --out dist
 
       - name: Upload wheels
@@ -98,7 +100,10 @@ jobs:
         run: pip3 install maturin
 
       # CUDA build — --features cuda enables candle GPU support
+      # CUDA_COMPUTE_CAP avoids nvidia-smi (no GPU in GitHub-hosted runner)
       - name: Build CUDA wheel
+        env:
+          CUDA_COMPUTE_CAP: "80"
         run: |
           . "$HOME/.cargo/env"
           maturin build --release --features cuda --out dist
