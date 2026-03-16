@@ -110,21 +110,24 @@ jobs:
       - name: Install Maturin
         run: pip3 install maturin
 
-      # Stub nvidia-smi for CI (no GPU in runner); output format expected by bindgen_cuda
+      # Stub nvidia-smi for CI (no GPU). Cargo build script must see it on PATH.
       - name: Stub nvidia-smi (compute_cap 8.0 for sm_80)
         run: |
-          mkdir -p "$HOME/bin"
-          printf '%s\n' '#!/bin/sh' 'echo "compute_cap"; echo "8.0"' > "$HOME/bin/nvidia-smi"
-          chmod +x "$HOME/bin/nvidia-smi"
-          echo "$HOME/bin" >> $GITHUB_PATH
-          echo "$HOME/bin" >> $GITHUB_ENV
-          echo "PATH=$HOME/bin:$PATH" >> $GITHUB_ENV
+          export Nvidia_smi_stub="/tmp/nvidia-smi-stub"
+          mkdir -p "$Nvidia_smi_stub"
+          printf '%s\n' '#!/bin/sh' 'echo "compute_cap"; echo "8.0"' > "$Nvidia_smi_stub/nvidia-smi"
+          chmod +x "$Nvidia_smi_stub/nvidia-smi"
+          echo "Nvidia_smi_stub=$Nvidia_smi_stub" >> $GITHUB_ENV
+          "$Nvidia_smi_stub/nvidia-smi"
 
       # CUDA build — --features cuda enables candle GPU support
       - name: Build CUDA wheel
+        env:
+          CUDA_COMPUTE_CAP: "80"
         run: |
           . "$HOME/.cargo/env"
-          export PATH="$HOME/bin:$PATH"
+          export PATH="$Nvidia_smi_stub:$PATH"
+          which nvidia-smi && nvidia-smi
           maturin build --release --features cuda --out dist
 
       - name: Upload wheels
