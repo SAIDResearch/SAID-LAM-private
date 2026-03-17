@@ -211,15 +211,24 @@ jobs:
       - name: Setup MSVC (cl.exe) for NVCC
         uses: ilammy/msvc-dev-cmd@v1
 
+      - name: Remove Git's link.exe (shadows MSVC linker)
+        shell: pwsh
+        run: |
+          $gitLink = "C:\Program Files\Git\usr\bin\link.exe"
+          if (Test-Path $gitLink) {
+            Remove-Item $gitLink -Force
+            Write-Host "Removed Git link.exe that was shadowing MSVC linker"
+          }
+
       - name: Install Maturin
         run: pip install maturin
 
       - name: Build CUDA wheels (Windows)
-        shell: bash
+        shell: pwsh
         run: |
-          maturin build --release --features cuda \
-            --target x86_64-pc-windows-msvc \
-            --interpreter python3.10 python3.11 python3.12 \
+          maturin build --release --features cuda `
+            --target x86_64-pc-windows-msvc `
+            --interpreter python3.10 python3.11 python3.12 `
             --out dist
 
       - name: Upload wheels
