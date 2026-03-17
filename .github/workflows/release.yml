@@ -270,6 +270,16 @@ jobs:
       - name: Install Maturin
         run: pip install maturin
 
+      - name: Bypass MSVC STL1002 Error
+        shell: pwsh
+        run: |
+          $extraFlags = "-allow-unsupported-compiler -D_ALLOW_COMPILER_AND_STL_VERSION_MISMATCH"
+          if ($env:NVCC_PREPEND_FLAGS) {
+            echo "NVCC_PREPEND_FLAGS=$env:NVCC_PREPEND_FLAGS $extraFlags" >> $env:GITHUB_ENV
+          } else {
+            echo "NVCC_PREPEND_FLAGS=$extraFlags" >> $env:GITHUB_ENV
+          }
+
       - name: Build CUDA wheels (Windows)
         shell: pwsh
         run: |
