@@ -166,6 +166,66 @@ jobs:
           path: dist/*.whl
 
   # ──────────────────────────────────────────────────────────────
+  # CUDA wheels — Windows x86_64
+  # ──────────────────────────────────────────────────────────────
+  build-cuda-windows:
+    name: CUDA · x86_64-pc-windows-msvc
+    runs-on: windows-latest
+    env:
+      CUDA_COMPUTE_CAP: "80"
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Python 3.10
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+
+      - name: Setup Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Setup Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-pc-windows-msvc
+
+      - name: Cache Rust
+        uses: Swatinem/rust-cache@v2
+        with:
+          key: cuda-windows
+
+      - name: Install CUDA Toolkit
+        uses: Jimver/cuda-toolkit@v0.2.17
+        id: cuda-toolkit
+        with:
+          cuda: '12.1.1'
+
+      - name: Install Maturin
+        run: pip install maturin
+
+      - name: Build CUDA wheels (Windows)
+        shell: bash
+        run: |
+          maturin build --release --features cuda \
+            --target x86_64-pc-windows-msvc \
+            --interpreter python3.10 python3.11 python3.12 \
+            --out dist
+
+      - name: Upload wheels
+        uses: actions/upload-artifact@v4
+        with:
+          name: wheels-cuda-x86_64-pc-windows-msvc
+          path: dist/*.whl
+
+  # ──────────────────────────────────────────────────────────────
   # Metal wheels — macOS Apple Silicon GPU
   # ──────────────────────────────────────────────────────────────
   build-metal:
@@ -223,9 +283,10 @@ jobs:
   # ──────────────────────────────────────────────────────────────
   publish:
     name: Publish to PyPI
-    needs: [build-cpu, build-cuda, build-metal]
+    needs: [build-cpu, build-cuda, build-cuda-windows, build-metal, smoke-test]
     runs-on: ubuntu-latest
     if: startsWith(github.ref, 'refs/tags/') && !contains(github.ref, 'rc')
+    environment: pypi-publish
 
     steps:
       - name: Download all artifacts
@@ -248,9 +309,10 @@ jobs:
   # ──────────────────────────────────────────────────────────────
   publish-test:
     name: Publish to TestPyPI
-    needs: [build-cpu, build-cuda, build-metal]
+    needs: [build-cpu, build-cuda, build-cuda-windows, build-metal, smoke-test]
     runs-on: ubuntu-latest
     if: startsWith(github.ref, 'refs/tags/v') && contains(github.ref, 'rc')
+    environment: testpypi-publish
 
     steps:
       - name: Download all artifacts
@@ -274,7 +336,7 @@ jobs:
   # ──────────────────────────────────────────────────────────────
   github-release:
     name: GitHub Release
-    needs: [build-cpu, build-cuda, build-metal]
+    needs: [build-cpu, build-cuda, build-cuda-windows, build-metal]
     runs-on: ubuntu-latest
     if: startsWith(github.ref, 'refs/tags/')
 
@@ -328,11 +390,11 @@ jobs:
         run: |
           # 1. Force upgrade pip
           python -m pip install --upgrade pip
-          
+
           # 2. Install numpy explicitly from PyPI
           pip install numpy
-          
-          # 3. Install the wheel by direct file path (NO --find-links, NO --no-index)
+
+          # 3. Install the wheel by direct file path
           WHEEL=$(ls dist/*cp311*.whl | head -n 1)
           pip install "$WHEEL"
 
