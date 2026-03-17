@@ -78,8 +78,15 @@ jobs:
             --compatibility manylinux_2_35 \
             --interpreter python3.10 python3.11 python3.12 --out dist
 
-      - name: Build CPU wheels (non-Linux)
-        if: runner.os != 'Linux'
+      - name: Build CPU wheels (macOS)
+        if: runner.os == 'macOS'
+        run: |
+          maturin build --release --target ${{ matrix.target }} \
+            --interpreter python3.10 python3.11 python3.12 --out dist
+
+      - name: Build CPU wheels (Windows)
+        if: runner.os == 'Windows'
+        shell: bash
         run: |
           maturin build --release --target ${{ matrix.target }} \
             --interpreter python3.10 python3.11 python3.12 --out dist
