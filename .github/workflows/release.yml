@@ -242,24 +242,25 @@ jobs:
         shell: pwsh
         run: |
           $hostConfig = "C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v12.1\include\crt\host_config.h"
-          if (Test-Path $hostConfig) {
-            $lines = Get-Content $hostConfig
-            $patched = $lines | ForEach-Object {
-              if ($_ -match '#error\s+--\s+unsupported Microsoft Visual Studio version') {
-                "// PATCHED: $_"
-              } else {
-                $_
-              }
-            }
-            Set-Content $hostConfig -Value $patched
-            Write-Host "Patched host_config.h: commented out MSVC version check #error directives"
-            # Show the patched area for verification
-            $lineNum = 0
-            $patched | ForEach-Object { $lineNum++; if ($lineNum -ge 148 -and $lineNum -le 158) { Write-Host "${lineNum}: $_" } }
-          } else {
-            Write-Error "host_config.h not found at expected path"
+          if (-not (Test-Path $hostConfig)) {
+            $hostConfig = Get-ChildItem -Path "C:\Program Files\NVIDIA GPU Computing Toolkit" -Recurse -Filter "host_config.h" -ErrorAction SilentlyContinue | Select-Object -First 1 -ExpandProperty FullName
+          }
+          if (-not $hostConfig) {
+            Write-Error "host_config.h not found"
             exit 1
           }
+          Write-Host "Patching: $hostConfig"
+          $lines = Get-Content $hostConfig
+          $patched = $lines | ForEach-Object {
+            if ($_ -match '#\s*error' -and $_ -match 'Visual Studio' -and $_ -match 'unsupported') {
+              "// PATCHED: " + $_
+            } else {
+              $_
+            }
+          }
+          Set-Content $hostConfig -Value $patched
+          Write-Host "Patched. Lines 151-156:"
+          for ($i = 150; $i -lt [Math]::Min(156, $patched.Count); $i++) { Write-Host "$($i+1): $($patched[$i])" }
 
       - name: Find and set VS 2022 cl.exe
         shell: pwsh
