@@ -238,28 +238,36 @@ jobs:
             Write-Host "Removed Git link.exe that was shadowing MSVC linker"
           }
 
-      - name: Find and pin VS 2022 cl.exe for NVCC
-        id: find-cl
+      - name: Patch CUDA host_config.h to accept newer MSVC
         shell: pwsh
         run: |
-          # Find the VS 2022 cl.exe path
+          $hostConfig = "C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v12.1\include\crt\host_config.h"
+          if (Test-Path $hostConfig) {
+            $content = Get-Content $hostConfig -Raw
+            # Replace the version ceiling check: raise _MSC_VER limit from 1940 to 2000
+            $patched = $content -replace '(_MSC_VER\s*>\s*)1940', '${1}2000'
+            Set-Content $hostConfig -Value $patched -NoNewline
+            Write-Host "Patched host_config.h to allow MSVC versions up to _MSC_VER 2000"
+          } else {
+            Write-Error "host_config.h not found at expected path"
+            exit 1
+          }
+
+      - name: Find and set VS 2022 cl.exe
+        shell: pwsh
+        run: |
           $clPath = & vswhere -version '[17.0,18.0)' -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -find 'VC\Tools\MSVC\*\bin\Hostx64\x64\cl.exe' | Select-Object -First 1
           if (-not $clPath) {
             $clPath = Get-ChildItem "C:\Program Files\Microsoft Visual Studio\2022\*\VC\Tools\MSVC\*\bin\Hostx64\x64\cl.exe" -ErrorAction SilentlyContinue | Select-Object -First 1 -ExpandProperty FullName
           }
-          if (-not $clPath) {
-            Write-Error "Could not find VS 2022 cl.exe"
-            exit 1
+          if ($clPath) {
+            $clDir = Split-Path $clPath
+            Write-Host "Found cl.exe at: $clPath"
+            & $clPath 2>&1 | Select-String "Version"
+            echo "NVCC_CCBIN=$clDir" >> $env:GITHUB_ENV
+          } else {
+            Write-Host "Warning: Could not find VS 2022 cl.exe, relying on PATH"
           }
-          $clDir = Split-Path $clPath
-          Write-Host "Found cl.exe at: $clPath"
-          & $clPath 2>&1 | Select-String "Version"
-          # Set every possible env var that nvcc/bindgen_cuda might check
-          echo "CL_DIR=$clDir" >> $env:GITHUB_ENV
-          echo "NVCC_CCBIN=$clDir" >> $env:GITHUB_ENV
-          echo "CUDAHOSTCXX=$clPath" >> $env:GITHUB_ENV
-          # NVCC_PREPEND_FLAGS is injected into EVERY nvcc call — this is the nuclear option
-          echo "NVCC_PREPEND_FLAGS=-ccbin `"$clDir`" -allow-unsupported-compiler" >> $env:GITHUB_ENV
 
       - name: Install Maturin
         run: pip install maturin
@@ -267,8 +275,6 @@ jobs:
       - name: Build CUDA wheels (Windows)
         shell: pwsh
         run: |
-          Write-Host "NVCC_CCBIN=$env:NVCC_CCBIN"
-          Write-Host "NVCC_PREPEND_FLAGS=$env:NVCC_PREPEND_FLAGS"
           maturin build --release --features cuda `
             --target x86_64-pc-windows-msvc `
             --interpreter python3.10 python3.11 python3.12 `
