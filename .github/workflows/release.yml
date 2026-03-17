@@ -238,6 +238,27 @@ jobs:
             Write-Host "Removed Git link.exe that was shadowing MSVC linker"
           }
 
+      - name: Find and pin VS 2022 cl.exe for NVCC
+        id: find-cl
+        shell: pwsh
+        run: |
+          # Find the VS 2022 cl.exe path
+          $clPath = & vswhere -version '[17.0,18.0)' -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -find 'VC\Tools\MSVC\*\bin\Hostx64\x64\cl.exe' | Select-Object -First 1
+          if (-not $clPath) {
+            # Fallback: search directly
+            $clPath = Get-ChildItem "C:\Program Files\Microsoft Visual Studio\2022\*\VC\Tools\MSVC\*\bin\Hostx64\x64\cl.exe" -ErrorAction SilentlyContinue | Select-Object -First 1 -ExpandProperty FullName
+          }
+          if (-not $clPath) {
+            Write-Error "Could not find VS 2022 cl.exe"
+            exit 1
+          }
+          $clDir = Split-Path $clPath
+          Write-Host "Found cl.exe at: $clPath"
+          & $clPath 2>&1 | Select-String "Version"
+          echo "CL_DIR=$clDir" >> $env:GITHUB_ENV
+          echo "NVCC_CCBIN=$clDir" >> $env:GITHUB_ENV
+          echo "CUDAHOSTCXX=$clPath" >> $env:GITHUB_ENV
+
       - name: Install Maturin
         run: pip install maturin
 
