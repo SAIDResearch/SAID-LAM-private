@@ -418,5 +418,6 @@ jobs:
       - name: Verify wrapper imports
         shell: bash
         run: |
+          pip install mteb
           python -c "import said_lam; print('said_lam OK')"
           python -c "import lam; print('lam OK')"

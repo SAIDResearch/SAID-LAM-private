@@ -28,6 +28,7 @@ keywords = ["lam", "linear-attention-memory", "sca", "said-crystalline-attention
 dependencies = [
     "numpy>=1.20",
     "huggingface_hub>=0.20",
+    "mteb>=1.0",
 ]
 
 [project.optional-dependencies]
