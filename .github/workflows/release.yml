@@ -181,12 +181,12 @@ jobs:
           path: dist/*.whl
 
   # ──────────────────────────────────────────────────────────────
-  # CUDA wheels — Windows x86_64
+  # CUDA wheels — Windows x86_64 (windows-2019 = MSVC supported by CUDA 12.1)
   # ──────────────────────────────────────────────────────────────
   build-cuda-windows:
     name: CUDA · x86_64-pc-windows-msvc
     if: github.event_name != 'workflow_dispatch' || inputs.job == 'all' || inputs.job == 'cuda-windows'
-    runs-on: windows-2022
+    runs-on: windows-2019
     env:
       CUDA_COMPUTE_CAP: "80"
 
@@ -216,7 +216,7 @@ jobs:
       - name: Cache Rust
         uses: Swatinem/rust-cache@v2
         with:
-          key: cuda-windows-v2
+          key: cuda-windows-2019
 
       - name: Install CUDA Toolkit
         uses: Jimver/cuda-toolkit@v0.2.17
@@ -224,10 +224,10 @@ jobs:
         with:
           cuda: '12.1.1'
 
-      - name: Setup MSVC 2022 (cl.exe) for NVCC
+      - name: Setup MSVC 2019 (cl.exe) for NVCC
         uses: ilammy/msvc-dev-cmd@v1
         with:
-          vsversion: '2022'
+          vsversion: '2019'
 
       - name: Remove Git's link.exe (shadows MSVC linker)
         shell: pwsh
@@ -236,46 +236,6 @@ jobs:
           if (Test-Path $gitLink) {
             Remove-Item $gitLink -Force
             Write-Host "Removed Git link.exe that was shadowing MSVC linker"
-          }
-
-      - name: Patch CUDA host_config.h to accept newer MSVC
-        shell: pwsh
-        run: |
-          $hostConfig = "C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v12.1\include\crt\host_config.h"
-          if (-not (Test-Path $hostConfig)) {
-            $hostConfig = Get-ChildItem -Path "C:\Program Files\NVIDIA GPU Computing Toolkit" -Recurse -Filter "host_config.h" -ErrorAction SilentlyContinue | Select-Object -First 1 -ExpandProperty FullName
-          }
-          if (-not $hostConfig) {
-            Write-Error "host_config.h not found"
-            exit 1
-          }
-          Write-Host "Patching: $hostConfig"
-          $lines = Get-Content $hostConfig
-          $patched = $lines | ForEach-Object {
-            if ($_ -match '#\s*error' -and $_ -match 'Visual Studio' -and $_ -match 'unsupported') {
-              "// PATCHED: " + $_
-            } else {
-              $_
-            }
-          }
-          Set-Content $hostConfig -Value $patched
-          Write-Host "Patched. Lines 151-156:"
-          for ($i = 150; $i -lt [Math]::Min(156, $patched.Count); $i++) { Write-Host "$($i+1): $($patched[$i])" }
-
-      - name: Find and set VS 2022 cl.exe
-        shell: pwsh
-        run: |
-          $clPath = & vswhere -version '[17.0,18.0)' -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -find 'VC\Tools\MSVC\*\bin\Hostx64\x64\cl.exe' | Select-Object -First 1
-          if (-not $clPath) {
-            $clPath = Get-ChildItem "C:\Program Files\Microsoft Visual Studio\2022\*\VC\Tools\MSVC\*\bin\Hostx64\x64\cl.exe" -ErrorAction SilentlyContinue | Select-Object -First 1 -ExpandProperty FullName
-          }
-          if ($clPath) {
-            $clDir = Split-Path $clPath
-            Write-Host "Found cl.exe at: $clPath"
-            & $clPath 2>&1 | Select-String "Version"
-            echo "NVCC_CCBIN=$clDir" >> $env:GITHUB_ENV
-          } else {
-            Write-Host "Warning: Could not find VS 2022 cl.exe, relying on PATH"
           }
 
       - name: Install Maturin
