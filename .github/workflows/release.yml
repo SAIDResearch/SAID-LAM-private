@@ -326,11 +326,16 @@ jobs:
       - name: Install wheel
         shell: bash
         run: |
+          # 1. Force upgrade pip
           python -m pip install --upgrade pip
-          pip install numpy
-          WHEEL=$(ls dist/*cp311*.whl | head -1)
-          pip install "$WHEEL"          
           
+          # 2. Install numpy explicitly from PyPI
+          pip install numpy
+          
+          # 3. Install the wheel by direct file path (NO --find-links, NO --no-index)
+          WHEEL=$(ls dist/*cp311*.whl | head -n 1)
+          pip install "$WHEEL"
+
       - name: Verify import and basic functionality
         shell: bash
         run: |
