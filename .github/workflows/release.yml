@@ -243,11 +243,19 @@ jobs:
         run: |
           $hostConfig = "C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v12.1\include\crt\host_config.h"
           if (Test-Path $hostConfig) {
-            $content = Get-Content $hostConfig -Raw
-            # Replace the version ceiling check: raise _MSC_VER limit from 1940 to 2000
-            $patched = $content -replace '(_MSC_VER\s*>\s*)1940', '${1}2000'
-            Set-Content $hostConfig -Value $patched -NoNewline
-            Write-Host "Patched host_config.h to allow MSVC versions up to _MSC_VER 2000"
+            $lines = Get-Content $hostConfig
+            $patched = $lines | ForEach-Object {
+              if ($_ -match '#error\s+--\s+unsupported Microsoft Visual Studio version') {
+                "// PATCHED: $_"
+              } else {
+                $_
+              }
+            }
+            Set-Content $hostConfig -Value $patched
+            Write-Host "Patched host_config.h: commented out MSVC version check #error directives"
+            # Show the patched area for verification
+            $lineNum = 0
+            $patched | ForEach-Object { $lineNum++; if ($lineNum -ge 148 -and $lineNum -le 158) { Write-Host "${lineNum}: $_" } }
           } else {
             Write-Error "host_config.h not found at expected path"
             exit 1
