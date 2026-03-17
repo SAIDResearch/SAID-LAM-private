@@ -1,6 +1,6 @@
 [package]
 name = "said-lam"
-version = "1.0.8"
+version = "1.0.9"
 edition = "2021"
 description = "SAID-LAM: Linear Attention Memory — first in the LAM (Linear Attention Models) family, 384-dim semantic embeddings with O(n) complexity"
 license = "Proprietary"
