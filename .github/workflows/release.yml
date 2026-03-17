@@ -245,7 +245,6 @@ jobs:
           # Find the VS 2022 cl.exe path
           $clPath = & vswhere -version '[17.0,18.0)' -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -find 'VC\Tools\MSVC\*\bin\Hostx64\x64\cl.exe' | Select-Object -First 1
           if (-not $clPath) {
-            # Fallback: search directly
             $clPath = Get-ChildItem "C:\Program Files\Microsoft Visual Studio\2022\*\VC\Tools\MSVC\*\bin\Hostx64\x64\cl.exe" -ErrorAction SilentlyContinue | Select-Object -First 1 -ExpandProperty FullName
           }
           if (-not $clPath) {
@@ -255,9 +254,12 @@ jobs:
           $clDir = Split-Path $clPath
           Write-Host "Found cl.exe at: $clPath"
           & $clPath 2>&1 | Select-String "Version"
+          # Set every possible env var that nvcc/bindgen_cuda might check
           echo "CL_DIR=$clDir" >> $env:GITHUB_ENV
           echo "NVCC_CCBIN=$clDir" >> $env:GITHUB_ENV
           echo "CUDAHOSTCXX=$clPath" >> $env:GITHUB_ENV
+          # NVCC_PREPEND_FLAGS is injected into EVERY nvcc call — this is the nuclear option
+          echo "NVCC_PREPEND_FLAGS=-ccbin `"$clDir`" -allow-unsupported-compiler" >> $env:GITHUB_ENV
 
       - name: Install Maturin
         run: pip install maturin
@@ -265,6 +267,8 @@ jobs:
       - name: Build CUDA wheels (Windows)
         shell: pwsh
         run: |
+          Write-Host "NVCC_CCBIN=$env:NVCC_CCBIN"
+          Write-Host "NVCC_PREPEND_FLAGS=$env:NVCC_PREPEND_FLAGS"
           maturin build --release --features cuda `
             --target x86_64-pc-windows-msvc `
             --interpreter python3.10 python3.11 python3.12 `
