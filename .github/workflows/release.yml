@@ -66,13 +66,23 @@ jobs:
             binutils-aarch64-linux-gnu \
             libc6-dev-arm64-cross
 
-      - name: Build CPU wheels
+      - name: Build CPU wheels (Linux)
+        if: runner.os == 'Linux'
         env:
           CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER: aarch64-linux-gnu-gcc
           CC_aarch64_unknown_linux_gnu: aarch64-linux-gnu-gcc
           CXX_aarch64_unknown_linux_gnu: aarch64-linux-gnu-g++
           AR_aarch64_unknown_linux_gnu: aarch64-linux-gnu-ar
-        run: maturin build --release --target ${{ matrix.target }} --interpreter python3.10 python3.11 python3.12 --out dist
+        run: |
+          maturin build --release --target ${{ matrix.target }} \
+            --compatibility manylinux_2_35 \
+            --interpreter python3.10 python3.11 python3.12 --out dist
+
+      - name: Build CPU wheels (non-Linux)
+        if: runner.os != 'Linux'
+        run: |
+          maturin build --release --target ${{ matrix.target }} \
+            --interpreter python3.10 python3.11 python3.12 --out dist
 
       - name: Upload wheels
         uses: actions/upload-artifact@v4
@@ -92,19 +102,26 @@ jobs:
       CUDA_COMPUTE_CAP: "80"
       # Prevent pip "externally-managed-environment" errors in container
       PIP_BREAK_SYSTEM_PACKAGES: "1"
+      # Prevent tzdata interactive prompt from hanging the build
+      DEBIAN_FRONTEND: noninteractive
+      TZ: Etc/UTC
 
     steps:
       - uses: actions/checkout@v4
 
       - name: Install system deps + Python
         run: |
+          export DEBIAN_FRONTEND=noninteractive
+          export TZ=Etc/UTC
+          ln -snf /usr/share/zoneinfo/$TZ /etc/localtime
+          echo $TZ > /etc/timezone
           apt-get update
-          apt-get install -y \
-            software-properties-common curl gcc pkg-config libssl-dev
+          apt-get install -y --no-install-recommends \
+            software-properties-common curl gcc pkg-config libssl-dev tzdata
           # Add deadsnakes for multiple Python versions
           add-apt-repository -y ppa:deadsnakes/ppa
           apt-get update
-          apt-get install -y \
+          apt-get install -y --no-install-recommends \
             python3.10 python3.10-dev python3.10-venv \
             python3.11 python3.11-dev python3.11-venv \
             python3.12 python3.12-dev python3.12-venv \
@@ -149,6 +166,7 @@ jobs:
         run: |
           . "$HOME/.cargo/env"
           maturin build --release --features cuda \
+            --compatibility manylinux_2_35 \
             --interpreter python3.10 python3.11 python3.12 \
             --out dist
 
@@ -313,9 +331,16 @@ jobs:
           path: dist
 
       - name: Install wheel
-        run: pip install dist/*.whl
+        shell: bash
+        run: |
+          # Use --find-links so pip selects the wheel matching this Python version
+          # Get package name from any wheel in dist/
+          WHEEL=$(ls dist/*.whl | head -1)
+          PKG_NAME=$(echo "$WHEEL" | sed 's/-[0-9].*//' | xargs basename | tr '_' '-')
+          pip install --no-index --find-links dist/ "$PKG_NAME"
 
       - name: Verify import and basic functionality
+        shell: bash
         run: |
           python -c "
           from lam_candle import LamEngine, TIER_FREE, TIER_BETA
@@ -329,6 +354,7 @@ jobs:
           "
 
       - name: Verify wrapper imports
+        shell: bash
         run: |
           python -c "import said_lam; print('said_lam OK')"
           python -c "import lam; print('lam OK')"

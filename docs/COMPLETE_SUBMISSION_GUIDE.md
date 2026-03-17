@@ -69,7 +69,7 @@ git commit -m "Private repo: full tree for wheel builds"
 
 # Add the private repo as origin (replace with your repo URL)
 git remote add origin https://github.com/YOUR_ORG/SAID-LAM-private.git
- git remote set-url origin "https://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@github.com/SAIDResearch/SAID-LAM-private.git"
+ git remote set-url origin "https://token@github.com/SAIDResearch/SAID-LAM-private.git"
 # Or SSH: git remote add origin git@github.com:YOUR_ORG/SAID-LAM-private.git
 
 git branch -M main
