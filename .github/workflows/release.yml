@@ -22,9 +22,9 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - os: ubuntu-latest
+          - os: ubuntu-22.04
             target: x86_64-unknown-linux-gnu
-          - os: ubuntu-latest
+          - os: ubuntu-22.04
             target: aarch64-unknown-linux-gnu
           - os: macos-latest
             target: aarch64-apple-darwin
@@ -112,9 +112,7 @@ jobs:
       image: nvidia/cuda:12.1.1-devel-ubuntu22.04
     env:
       CUDA_COMPUTE_CAP: "80"
-      # Prevent pip "externally-managed-environment" errors in container
       PIP_BREAK_SYSTEM_PACKAGES: "1"
-      # Prevent tzdata interactive prompt from hanging the build
       DEBIAN_FRONTEND: noninteractive
       TZ: Etc/UTC
 
@@ -130,7 +128,6 @@ jobs:
           apt-get update
           apt-get install -y --no-install-recommends \
             software-properties-common curl gcc pkg-config libssl-dev tzdata
-          # Add deadsnakes for multiple Python versions
           add-apt-repository -y ppa:deadsnakes/ppa
           apt-get update
           apt-get install -y --no-install-recommends \
@@ -147,8 +144,6 @@ jobs:
       - name: Install Maturin
         run: pip3 install maturin
 
-      # Stub nvidia-smi — match the CSV format candle/bindgen_cuda expects
-      # from `nvidia-smi --query-gpu=compute_cap --format=csv,noheader`
       - name: Stub nvidia-smi
         run: |
           mkdir -p /usr/local/bin
@@ -206,7 +201,6 @@ jobs:
       - name: Install Maturin
         run: pip install maturin
 
-      # Verify Metal SDK is available (Xcode ships it)
       - name: Verify Metal availability
         run: |
           xcrun --sdk macosx --show-sdk-path
@@ -310,7 +304,7 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - os: ubuntu-latest
+          - os: ubuntu-22.04
             target: x86_64-unknown-linux-gnu
           - os: macos-latest
             target: aarch64-apple-darwin
@@ -332,8 +326,6 @@ jobs:
       - name: Install wheel
         shell: bash
         run: |
-          # Use --find-links so pip selects the wheel matching this Python version
-          # Get package name from any wheel in dist/
           WHEEL=$(ls dist/*.whl | head -1)
           PKG_NAME=$(echo "$WHEEL" | sed 's/-[0-9].*//' | xargs basename | tr '_' '-')
           pip install --no-index --find-links dist/ "$PKG_NAME"
