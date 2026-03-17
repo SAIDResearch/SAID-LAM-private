@@ -326,10 +326,11 @@ jobs:
       - name: Install wheel
         shell: bash
         run: |
+          # Removed --no-index so pip can download dependencies (like numpy) from PyPI
           WHEEL=$(ls dist/*.whl | head -1)
           PKG_NAME=$(echo "$WHEEL" | sed 's/-[0-9].*//' | xargs basename | tr '_' '-')
-          pip install --no-index --find-links dist/ "$PKG_NAME"
-
+          pip install --find-links dist/ "$PKG_NAME"
+          
       - name: Verify import and basic functionality
         shell: bash
         run: |
