@@ -349,7 +349,9 @@ jobs:
           path: dist/*.whl
 
   # ──────────────────────────────────────────────────────────────
-  # Publish to PyPI
+  # Publish to PyPI (Trusted Publisher — no API token; use OIDC)
+  # Add publisher at: https://pypi.org/manage/project/said-lam/settings/publishing/
+  # Provider: GitHub, Owner: SAIDResearch, Repository: SAID-LAM-private, Workflow: release.yml
   # ──────────────────────────────────────────────────────────────
   publish:
     name: Publish to PyPI
@@ -357,6 +359,8 @@ jobs:
     runs-on: ubuntu-latest
     if: startsWith(github.ref, 'refs/tags/') && !contains(github.ref, 'rc')
     environment: pypi-publish
+    permissions:
+      id-token: write
 
     steps:
       - name: Download all artifacts
@@ -371,7 +375,6 @@ jobs:
       - name: Publish to PyPI
         uses: pypa/gh-action-pypi-publish@release/v1
         with:
-          password: ${{ secrets.PYPI_API_TOKEN }}
           packages-dir: dist/
 
   # ──────────────────────────────────────────────────────────────
