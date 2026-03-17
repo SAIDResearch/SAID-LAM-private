@@ -7,6 +7,19 @@ on:
     tags:
       - 'v*'
   workflow_dispatch:
+    inputs:
+      job:
+        description: 'Which jobs to run'
+        required: true
+        default: 'all'
+        type: choice
+        options:
+          - all
+          - cpu-only
+          - cuda-linux
+          - cuda-windows
+          - metal
+          - smoke-test
 
 permissions:
   contents: write
@@ -17,6 +30,7 @@ jobs:
   # ──────────────────────────────────────────────────────────────
   build-cpu:
     name: CPU · ${{ matrix.target }}
+    if: github.event_name != 'workflow_dispatch' || inputs.job == 'all' || inputs.job == 'cpu-only'
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
@@ -107,6 +121,7 @@ jobs:
   # ──────────────────────────────────────────────────────────────
   build-cuda:
     name: CUDA · x86_64-linux
+    if: github.event_name != 'workflow_dispatch' || inputs.job == 'all' || inputs.job == 'cuda-linux'
     runs-on: ubuntu-latest
     container:
       image: nvidia/cuda:12.1.1-devel-ubuntu22.04
@@ -170,7 +185,8 @@ jobs:
   # ──────────────────────────────────────────────────────────────
   build-cuda-windows:
     name: CUDA · x86_64-pc-windows-msvc
-    runs-on: windows-latest
+    if: github.event_name != 'workflow_dispatch' || inputs.job == 'all' || inputs.job == 'cuda-windows'
+    runs-on: windows-2022
     env:
       CUDA_COMPUTE_CAP: "80"
 
@@ -200,7 +216,7 @@ jobs:
       - name: Cache Rust
         uses: Swatinem/rust-cache@v2
         with:
-          key: cuda-windows
+          key: cuda-windows-v2
 
       - name: Install CUDA Toolkit
         uses: Jimver/cuda-toolkit@v0.2.17
@@ -208,8 +224,10 @@ jobs:
         with:
           cuda: '12.1.1'
 
-      - name: Setup MSVC (cl.exe) for NVCC
+      - name: Setup MSVC 2022 (cl.exe) for NVCC
         uses: ilammy/msvc-dev-cmd@v1
+        with:
+          vsversion: '2022'
 
       - name: Remove Git's link.exe (shadows MSVC linker)
         shell: pwsh
@@ -242,6 +260,7 @@ jobs:
   # ──────────────────────────────────────────────────────────────
   build-metal:
     name: Metal · aarch64-apple-darwin
+    if: github.event_name != 'workflow_dispatch' || inputs.job == 'all' || inputs.job == 'metal'
     runs-on: macos-latest
 
     steps:
@@ -373,6 +392,10 @@ jobs:
   smoke-test:
     name: Smoke test · ${{ matrix.os }}
     needs: [build-cpu]
+    if: |
+      always() && 
+      (needs.build-cpu.result == 'success') &&
+      (github.event_name != 'workflow_dispatch' || inputs.job == 'all' || inputs.job == 'cpu-only' || inputs.job == 'smoke-test')
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
