@@ -373,6 +373,7 @@ jobs:
         with:
           password: ${{ secrets.PYPI_API_TOKEN }}
           packages-dir: dist/
+          verbose: true
 
   # ──────────────────────────────────────────────────────────────
   # Publish to TestPyPI (release candidates: v*-rc*)
