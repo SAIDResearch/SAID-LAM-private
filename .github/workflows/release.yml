@@ -54,6 +54,11 @@ jobs:
         with:
           targets: ${{ matrix.target }}
 
+      - name: Cache Rust
+        uses: Swatinem/rust-cache@v2
+        with:
+          key: cpu-${{ matrix.target }}
+
       - name: Install Maturin
         run: pip install maturin
 
@@ -147,27 +152,9 @@ jobs:
       - name: Stub nvidia-smi
         run: |
           mkdir -p /usr/local/bin
-          cat > /usr/local/bin/nvidia-smi << 'STUB'
-          #!/bin/sh
-          # If called with --query-gpu, return CSV format
-          case "$*" in
-            *--query-gpu*)
-              echo "8.0"
-              ;;
-            *)
-              # Default output mimicking a basic nvidia-smi call
-              cat <<EOF
-          +-----------------------------------------------------------------------------+
-          | NVIDIA-SMI (stub)    Driver Version: 000.00       CUDA Version: 12.1        |
-          +-----------------------------------------------------------------------------+
-          | GPU  Name        Persistence-M| Bus-Id        Disp.A | Volatile Uncorr. ECC |
-          |   0  Stub GPU           Off   | 00000000:00:00.0 Off |                    0 |
-          +-----------------------------------------------------------------------------+
-          EOF
-              ;;
-          esac
-          STUB
+          printf '#!/bin/sh\ncase "$*" in\n*--query-gpu*) echo "8.0" ;;\n*) echo "NVIDIA-SMI (stub)" ;;\nesac\n' > /usr/local/bin/nvidia-smi
           chmod +x /usr/local/bin/nvidia-smi
+          /usr/local/bin/nvidia-smi --query-gpu=compute_cap --format=csv,noheader
 
       - name: Build CUDA wheels
         run: |
@@ -211,6 +198,11 @@ jobs:
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
 
+      - name: Cache Rust
+        uses: Swatinem/rust-cache@v2
+        with:
+          key: metal
+
       - name: Install Maturin
         run: pip install maturin
 
@@ -239,7 +231,7 @@ jobs:
     name: Publish to PyPI
     needs: [build-cpu, build-cuda, build-metal]
     runs-on: ubuntu-latest
-    if: startsWith(github.ref, 'refs/tags/')
+    if: startsWith(github.ref, 'refs/tags/') && !contains(github.ref, 'rc')
 
     steps:
       - name: Download all artifacts
