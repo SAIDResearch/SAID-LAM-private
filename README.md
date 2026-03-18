@@ -70,11 +70,31 @@ CUDA (GPU) wheels are published under a separate PyPI project:
 pip install said-lam-gpu
 ```
 
-Both packages use the same import name:
+To upgrade an existing installation to the latest version:
 
-```python
-from said_lam import LAM
+```bash
+pip install --upgrade said-lam
+# or for the GPU version:
+pip install --upgrade said-lam-gpu
 ```
+
+To install a specific older version:
+
+```bash
+pip install said-lam==1.0.2
+# or for the GPU version:
+pip install said-lam-gpu==1.0.2
+```
+
+To uninstall the package:
+
+```bash
+pip uninstall said-lam
+# or for the GPU version:
+pip uninstall said-lam-gpu
+```
+
+**Note:** Both packages use the exact same `import said_lam` namespace. Please ensure you only have one of them installed at a time to avoid conflicts.
 
 On first use, model weights (~92 MB) are automatically downloaded from HuggingFace and cached locally. The pip package itself is only ~6 MB (compiled Rust binary — weights are NOT bundled).
 
