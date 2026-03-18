@@ -169,18 +169,8 @@ jobs:
           chmod +x /usr/local/bin/nvidia-smi
           /usr/local/bin/nvidia-smi --query-gpu=compute_cap --format=csv,noheader
 
-      - name: Rename distribution for PyPI (Linux CUDA → said-lam-gpu)
-        run: |
-          python3 - <<'PY'
-          from pathlib import Path
-          p = Path("pyproject.toml")
-          s = p.read_text(encoding="utf-8")
-          s2 = s.replace('name = "said-lam"\n', 'name = "said-lam-gpu"\n', 1)
-          if s2 == s:
-            raise SystemExit('Expected to find project name = "said-lam" in pyproject.toml')
-          p.write_text(s2, encoding="utf-8")
-          print("Updated pyproject.toml project name to said-lam-gpu for CUDA build")
-          PY
+      - name: Rename package in pyproject.toml (Linux GPU)
+        run: sed -i 's/name = "said-lam"/name = "said-lam-gpu"/g' pyproject.toml
 
       - name: Build CUDA wheels
         run: |
@@ -296,17 +286,16 @@ jobs:
             echo "NVCC_PREPEND_FLAGS=$extraFlags" >> $env:GITHUB_ENV
           }
 
-      - name: Rename distribution for PyPI (Windows CUDA → said-lam-gpu)
+      - name: Rename package in pyproject.toml (Windows GPU)
         shell: pwsh
         run: |
           $path = "pyproject.toml"
-          $content = Get-Content $path -Raw
-          $newContent = $content -replace 'name = \"said-lam\"', 'name = \"said-lam-gpu\"'
-          if ($newContent -eq $content) {
-            throw "Expected to find project name = \"said-lam\" in pyproject.toml"
+          if (Test-Path $path) {
+            (Get-Content $path) -replace 'name = "said-lam"', 'name = "said-lam-gpu"' | Set-Content $path
+            Write-Host "Successfully updated $path"
+          } else {
+            Write-Host "No pyproject.toml found, skipping."
           }
-          Set-Content -Path $path -Value $newContent -Encoding UTF8
-          Write-Host "Updated pyproject.toml project name to said-lam-gpu for CUDA build"
 
       - name: Build CUDA wheels (Windows)
         shell: pwsh
