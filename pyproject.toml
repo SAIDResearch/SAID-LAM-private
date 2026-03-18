@@ -4,7 +4,7 @@ build-backend = "maturin"
 
 [project]
 name = "said-lam"
-version = "1.0.12"
+version = "1.0.0"
 description = "LAM (Linear Attention Models) — Deterministic recall with SAID Crystalline Attention. SAID-LAM-v1 is Linear Attention Memory."
 readme = "README.md"
 license = { text = "Proprietary" }

@@ -739,6 +739,13 @@ Key results:
 "
 ```
 
+### Part D: Taking scores live (MTEB + LongEmbed) and “logging a ticket”
+
+- **Going live:** Once both the **model wrapper PR** (mteb) and **results PR** (results) are merged, the same results feed both the main MTEB leaderboard and the **LongEmbed / Long-context Retrieval** tab. There is no separate LongEmbed submission.
+- **If the model does not appear** after merges, open an issue on [embeddings-benchmark/mteb](https://github.com/embeddings-benchmark/mteb/issues) or the [leaderboard Space](https://huggingface.co/spaces/mteb/leaderboard) asking to refresh the leaderboard, and link both merged PRs. That issue is your “ticket” to take scores live.
+
+For a full step-by-step (including prerequisites, exact PR steps, and ticket wording), see **[MTEB_LONGEMBED_SUBMISSION.md](MTEB_LONGEMBED_SUBMISSION.md)**.
+
 ---
 
 ## 6. Licensing Summary
