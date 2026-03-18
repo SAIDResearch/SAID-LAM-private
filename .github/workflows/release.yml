@@ -15,11 +15,13 @@ on:
         type: choice
         options:
           - all
+          - test-pypi-fast
           - cpu-only
           - cuda-linux
           - cuda-windows
           - metal
           - smoke-test
+          - test-pypi
 
 permissions:
   contents: write
@@ -31,7 +33,7 @@ jobs:
   # ──────────────────────────────────────────────────────────────
   build-cpu:
     name: CPU · ${{ matrix.target }}
-    if: github.event_name != 'workflow_dispatch' || inputs.job == 'all' || inputs.job == 'cpu-only'
+    if: github.event_name != 'workflow_dispatch' || inputs.job == 'all' || inputs.job == 'cpu-only' || inputs.job == 'test-pypi' || inputs.job == 'test-pypi-fast'
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
@@ -351,14 +353,18 @@ jobs:
 
   # ──────────────────────────────────────────────────────────────
   # Publish to PyPI (Trusted Publisher — OIDC, no password)
-  # Configure at: https://pypi.org/manage/project/said-lam/settings/publishing/
+  # Temporarily simplified: only needs CPU builds for fast testing
+  # TODO: Restore full needs after PyPI test succeeds:
+  #   needs: [build-cpu, build-cuda, build-cuda-windows, build-metal, smoke-test]
   # ──────────────────────────────────────────────────────────────
   publish:
     name: Publish to PyPI
-    needs: [build-cpu, build-cuda, build-cuda-windows, build-metal, smoke-test]
+    needs: [build-cpu]
     runs-on: ubuntu-latest
-    if: startsWith(github.ref, 'refs/tags/') && !contains(github.ref, 'rc')
     environment: pypi-publish
+    if: |
+      (startsWith(github.ref, 'refs/tags/') && !contains(github.ref, 'rc')) ||
+      (github.event_name == 'workflow_dispatch' && inputs.job == 'test-pypi-fast')
 
     steps:
       - name: Download all artifacts
