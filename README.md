@@ -64,6 +64,18 @@ Spearman r = 0.8181 on the STS-B test set (1,379 sentence pairs):
 pip install said-lam
 ```
 
+CUDA (GPU) wheels are published under a separate PyPI project:
+
+```bash
+pip install said-lam-gpu
+```
+
+Both packages use the same import name:
+
+```python
+from said_lam import LAM
+```
+
 On first use, model weights (~92 MB) are automatically downloaded from HuggingFace and cached locally. The pip package itself is only ~6 MB (compiled Rust binary — weights are NOT bundled).
 
 ## Drop-in sentence-transformers Replacement

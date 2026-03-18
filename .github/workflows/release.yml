@@ -169,6 +169,19 @@ jobs:
           chmod +x /usr/local/bin/nvidia-smi
           /usr/local/bin/nvidia-smi --query-gpu=compute_cap --format=csv,noheader
 
+      - name: Rename distribution for PyPI (Linux CUDA → said-lam-gpu)
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path("pyproject.toml")
+          s = p.read_text(encoding="utf-8")
+          s2 = s.replace('name = "said-lam"\n', 'name = "said-lam-gpu"\n', 1)
+          if s2 == s:
+            raise SystemExit('Expected to find project name = "said-lam" in pyproject.toml')
+          p.write_text(s2, encoding="utf-8")
+          print("Updated pyproject.toml project name to said-lam-gpu for CUDA build")
+          PY
+
       - name: Build CUDA wheels
         run: |
           . "$HOME/.cargo/env"
@@ -283,6 +296,18 @@ jobs:
             echo "NVCC_PREPEND_FLAGS=$extraFlags" >> $env:GITHUB_ENV
           }
 
+      - name: Rename distribution for PyPI (Windows CUDA → said-lam-gpu)
+        shell: pwsh
+        run: |
+          $path = "pyproject.toml"
+          $content = Get-Content $path -Raw
+          $newContent = $content -replace 'name = \"said-lam\"', 'name = \"said-lam-gpu\"'
+          if ($newContent -eq $content) {
+            throw "Expected to find project name = \"said-lam\" in pyproject.toml"
+          }
+          Set-Content -Path $path -Value $newContent -Encoding UTF8
+          Write-Host "Updated pyproject.toml project name to said-lam-gpu for CUDA build"
+
       - name: Build CUDA wheels (Windows)
         shell: pwsh
         run: |
@@ -359,12 +384,10 @@ jobs:
   # ──────────────────────────────────────────────────────────────
   publish:
     name: Publish to PyPI
-    needs: [build-cpu]
+    needs: [build-cpu, build-metal, build-cuda, build-cuda-windows, smoke-test]
     runs-on: ubuntu-latest
     environment: pypi-publish
-    if: |
-      (startsWith(github.ref, 'refs/tags/') && !contains(github.ref, 'rc')) ||
-      (github.event_name == 'workflow_dispatch' && inputs.job == 'test-pypi-fast')
+    if: startsWith(github.ref, 'refs/tags/') && !contains(github.ref, 'rc')
 
     steps:
       - name: Download all artifacts
