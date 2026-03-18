@@ -23,6 +23,7 @@ on:
 
 permissions:
   contents: write
+  id-token: write  # Required for PyPI Trusted Publishing (OIDC)
 
 jobs:
   # ──────────────────────────────────────────────────────────────
@@ -349,7 +350,8 @@ jobs:
           path: dist/*.whl
 
   # ──────────────────────────────────────────────────────────────
-  # Publish to PyPI (use API token: add PYPI_API_TOKEN to repo Secrets or pypi-publish environment)
+  # Publish to PyPI (Trusted Publisher — OIDC, no password)
+  # Configure at: https://pypi.org/manage/project/said-lam/settings/publishing/
   # ──────────────────────────────────────────────────────────────
   publish:
     name: Publish to PyPI
@@ -371,7 +373,6 @@ jobs:
       - name: Publish to PyPI
         uses: pypa/gh-action-pypi-publish@release/v1
         with:
-          password: ${{ secrets.PYPI_API_TOKEN }}
           packages-dir: dist/
           verbose: true
 
