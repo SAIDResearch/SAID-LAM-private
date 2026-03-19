@@ -16,11 +16,9 @@ from __future__ import annotations
 
 import logging
 import numpy as np
+import threading
 from typing import List, Optional, Tuple
 from pathlib import Path
-
-# MTEB loader + metadata (re-exported)
-from .said_lam import said_lam_loader, said_lam_v1  # noqa: F401
 
 __version__ = "1.0.0"
 __author__ = "SAIDResearch"
@@ -28,7 +26,7 @@ __author__ = "SAIDResearch"
 logger = logging.getLogger(__name__)
 
 # ============================================================================
-# RUST BACKEND
+# RUST BACKEND — must initialize CUDA *before* any torch/mteb import
 # ============================================================================
 
 try:
@@ -37,6 +35,17 @@ try:
 except ImportError:
     _HAS_CANDLE = False
     raise ImportError("lam_candle not found - pip install said-lam")
+
+# Eagerly initialize CUDA + cuBLAS BEFORE torch gets imported (by mteb below).
+# PyTorch's CUDA context initialization corrupts cudarc's cuBLAS handle;
+# warming up first ensures the handle is created in a clean state.
+try:
+    lam_candle.cuda_warmup()
+except Exception:
+    pass
+
+# MTEB loader + metadata (re-exported) — imports mteb which imports torch
+from .said_lam import said_lam_loader, said_lam_v1  # noqa: F401
 
 # Optional: LAM can serve as MTEB encoder (same class for all users)
 try:
@@ -98,10 +107,20 @@ class LAM(_AbsEncoder):
             raise ValueError(f"backend must be 'crystalline', got {backend!r}")
 
         # Device selection: Rust auto-detects (CUDA if available, else CPU)
+        import os
         if device and device.lower() == "cpu":
-            import os
             os.environ["CUDA_VISIBLE_DEVICES"] = ""
+        else:
+            # Candle/CUDA device selection can be surprising on multi-GPU hosts or when
+            # running inside containers. If the user didn't specify a mapping, default
+            # to GPU 0 for stable behavior.
+            os.environ.setdefault("CUDA_VISIBLE_DEVICES", "0")
         self._device = device or "cuda"
+
+        # CUDA/cuBLAS initialization and handles can be sensitive to concurrent calls.
+        # MTEB evaluators (notably STS) may call encode() from multiple threads.
+        # We serialize all Rust engine calls to keep GPU execution stable.
+        self._engine_lock = threading.RLock()
 
         # Find model path
         model_path = self._resolve_model_path(model_name_or_path)
@@ -263,16 +282,36 @@ class LAM(_AbsEncoder):
         """Encode texts to embeddings. Simple API: up to 12K tokens per text → one embedding. MTEB: DataLoader + task_metadata."""
         # MTEB protocol: encode(inputs=DataLoader, task_metadata=..., ...)
         if task_metadata is not None:
-            texts = _extract_texts_mteb(sentences)
-            if not texts:
+            # Important: do NOT materialize the whole DataLoader into one mega-list.
+            # Some MTEB evaluators can pass very large iterables; encoding in smaller
+            # chunks is both faster (less peak RAM) and more stable on CUDA backends.
+            out_chunks: list[np.ndarray] = []
+            total = 0
+            for batch in sentences:
+                if isinstance(batch, dict) and "text" in batch:
+                    v = batch["text"]
+                    texts = v if isinstance(v, list) else [str(v)]
+                elif isinstance(batch, (list, tuple)):
+                    texts = [str(s) for s in batch]
+                else:
+                    texts = [str(batch)]
+                if not texts:
+                    continue
+                total += len(texts)
+                with self._engine_lock:
+                    arr = self._engine.encode(
+                        texts, normalize_embeddings, batch_size, doc_ids, store_for_recall
+                    )
+                out_chunks.append(np.asarray(arr, dtype=np.float32))
+
+            if total == 0:
                 return np.zeros((0, self._embedding_dim), dtype=np.float32)
-            arr = self._engine.encode(
-                texts, normalize_embeddings, batch_size, doc_ids, store_for_recall
-            )
-            result = np.asarray(arr, dtype=np.float32)
+
+            result = np.concatenate(out_chunks, axis=0) if len(out_chunks) > 1 else out_chunks[0]
             odim = output_dim if output_dim is not None else self._output_dim
             if odim is not None and odim < self._embedding_dim:
-                result = self._engine.truncate_embeddings(result, odim)
+                with self._engine_lock:
+                    result = self._engine.truncate_embeddings(result, odim)
             return result
 
         # Simple API: encode(sentences)
@@ -284,16 +323,18 @@ class LAM(_AbsEncoder):
             dim = output_dim or self._embedding_dim
             return np.zeros((0, dim), dtype=np.float32)
 
-        embeddings = self._engine.encode(
-            sentences,
-            normalize_embeddings,
-            batch_size,
-            doc_ids,
-            store_for_recall,
-        )
+        with self._engine_lock:
+            embeddings = self._engine.encode(
+                sentences,
+                normalize_embeddings,
+                batch_size,
+                doc_ids,
+                store_for_recall,
+            )
         result = np.array(embeddings, dtype=np.float32)
         if output_dim is not None and output_dim < self._embedding_dim:
-            result = self._engine.truncate_embeddings(result, output_dim)
+            with self._engine_lock:
+                result = self._engine.truncate_embeddings(result, output_dim)
         return result
 
     def index(
@@ -322,8 +363,9 @@ class LAM(_AbsEncoder):
                 title = doc.get("title", "") or ""
                 t = doc.get("text", "") or ""
                 texts_list.append(f"{title} {t}".strip() if title else t)
-            self._engine.auto_activate_mteb()
-            self._engine.index_mteb(ids_list, texts_list, task, None)
+            with self._engine_lock:
+                self._engine.auto_activate_mteb()
+                self._engine.index_mteb(ids_list, texts_list, task, None)
             return
 
         # Simple API: index(doc_id, text)
@@ -336,10 +378,11 @@ class LAM(_AbsEncoder):
         """Build the MTEB index from all pending documents."""
         if not self._pending_ids:
             return
-        self._engine.auto_activate_mteb()
-        self._engine.index_mteb(
-            self._pending_ids, self._pending_texts, "retrieval", None
-        )
+        with self._engine_lock:
+            self._engine.auto_activate_mteb()
+            self._engine.index_mteb(
+                self._pending_ids, self._pending_texts, "retrieval", None
+            )
         self._pending_ids.clear()
         self._pending_texts.clear()
         self._index_built = True
@@ -375,7 +418,8 @@ class LAM(_AbsEncoder):
                 qtexts = [t for b in _create_text_queries_dataloader(queries) for t in b["text"]]
             except Exception:
                 qtexts = [str(q) for q in queries.get("text", [])]
-            raw = self._engine.search_mteb(qids, qtexts, task, top_k, None)
+            with self._engine_lock:
+                raw = self._engine.search_mteb(qids, qtexts, task, top_k, None)
             return {
                 qid: {did: float(s) for did, s in docs.items()}
                 for qid, docs in raw.items()
@@ -384,7 +428,8 @@ class LAM(_AbsEncoder):
         # Simple API: search(query, top_k=10)
         self._flush_index()
         qid = "_q"
-        raw = self._engine.search_mteb([qid], [query_or_queries], "retrieval", top_k, None)
+        with self._engine_lock:
+            raw = self._engine.search_mteb([qid], [query_or_queries], "retrieval", top_k, None)
         doc_scores = raw.get(qid, {})
         return sorted(doc_scores.items(), key=lambda x: x[1], reverse=True)[:top_k]
 
@@ -404,15 +449,18 @@ class LAM(_AbsEncoder):
         """Truncate embeddings (Matryoshka Representation Learning)."""
         if embeddings.ndim == 1:
             embeddings = embeddings.reshape(1, -1)
-        return self._engine.truncate_embeddings(embeddings, target_dim)
+        with self._engine_lock:
+            return self._engine.truncate_embeddings(embeddings, target_dim)
 
     def count_tokens(self, text: str) -> int:
         """Count BERT tokens for a text."""
-        return self._engine.count_tokens(text)
+        with self._engine_lock:
+            return self._engine.count_tokens(text)
 
     def get_document(self, doc_id: str) -> Optional[str]:
         """Get document text by ID."""
-        return self._engine.get_document(doc_id)
+        with self._engine_lock:
+            return self._engine.get_document(doc_id)
 
     def __len__(self) -> int:
         """Number of indexed documents (including pending)."""

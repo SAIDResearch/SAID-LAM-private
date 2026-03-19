@@ -7,11 +7,34 @@
 //! The .so binary contains only compiled code (~5MB), not model weights.
 
 use candle_core::{Device, DType, Tensor, Result as CandleResult, D};
+#[cfg(feature = "cuda")]
+use candle_core::CudaDevice;
 use candle_nn::{VarBuilder, Module, Linear, Embedding};
 use safetensors::SafeTensors;
 use std::path::Path;
 use std::collections::HashMap;
+use std::sync::Mutex;
 use tokenizers::Tokenizer;
+
+/// Cached CUDA device from warmup, so ALL engines reuse the same cuBLAS handle.
+/// This prevents PyTorch's CUDA context from corrupting cudarc's cuBLAS handle.
+static WARMED_UP_DEVICE: Mutex<Option<Device>> = Mutex::new(None);
+
+/// Store the warmed-up device for later reuse by get_best_device().
+pub fn set_warmed_up_device(dev: Device) {
+    if let Ok(mut guard) = WARMED_UP_DEVICE.lock() {
+        *guard = Some(dev);
+    }
+}
+
+/// Clone the warmed-up device (keeps it available for future engines).
+fn clone_warmed_up_device() -> Option<Device> {
+    if let Ok(guard) = WARMED_UP_DEVICE.lock() {
+        guard.clone()
+    } else {
+        None
+    }
+}
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // MODEL CONFIGURATION - Exact match to _core.py/config.json
@@ -770,21 +793,33 @@ impl LAMModel {
     /// Get the best available device (CUDA > CPU)
     /// Checks CUDA_VISIBLE_DEVICES environment variable at initialization
     fn get_best_device() -> Device {
-        // Check CUDA_VISIBLE_DEVICES first - if empty, force CPU
+        // Check CUDA_VISIBLE_DEVICES first - if empty, force CPU.
+        // This must happen BEFORE reusing warmed CUDA handles, so explicit
+        // CPU requests (and CPU fallback retries) are always honored.
         if let Ok(cuda_visible) = std::env::var("CUDA_VISIBLE_DEVICES") {
             if cuda_visible.is_empty() {
                 eprintln!("📊 CUDA_VISIBLE_DEVICES is empty, forcing CPU mode");
                 return Device::Cpu;
             }
         }
-        
-        // Try CUDA first (loop through IDs to find a working one)
+
+        // Prefer the warmed-up device (created before PyTorch could interfere).
+        // Clone it so every engine shares the same cuBLAS handle.
+        if let Some(dev) = clone_warmed_up_device() {
+            eprintln!("📊 LAM reusing warmed-up CUDA device");
+            return dev;
+        }
+
         #[cfg(feature = "cuda")]
         {
-            for i in 0..4 {
-                match Device::new_cuda(i) {
-                    Ok(device) => {
-                        return device;
+            let max_devices = std::env::var("CUDA_VISIBLE_DEVICES")
+                .map(|v| v.split(',').filter(|s| !s.trim().is_empty()).count().max(1))
+                .unwrap_or(4);
+            for i in 0..max_devices {
+                match CudaDevice::new_with_stream(i) {
+                    Ok(cuda_dev) => {
+                        eprintln!("📊 LAM using device: Cuda({})", i);
+                        return Device::Cuda(cuda_dev);
                     }
                     Err(e) => {
                         eprintln!("⚠️ CUDA Device {} initialization failed: {:?}", i, e);

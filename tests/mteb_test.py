@@ -81,8 +81,6 @@ import time
 from pathlib import Path
 from typing import Any
 
-import mteb
-
 # Repo root first so "said_lam" is the package; append said_lam dir for native extension (must not shadow package)
 _tests_dir = Path(__file__).resolve().parent
 _repo_root = _tests_dir.parent
@@ -91,6 +89,10 @@ if str(_repo_root) not in sys.path:
     sys.path.insert(0, str(_repo_root))
 if _said_lam_dir.exists() and str(_said_lam_dir) not in sys.path:
     sys.path.append(str(_said_lam_dir))  # native .so (append so said_lam stays the package)
+
+# Import said_lam before mteb so package-level cuda_warmup runs before torch import.
+import said_lam  # noqa: F401
+import mteb
 
 # ---------------------------------------------------------------------------
 # Step 1: Define model
@@ -551,13 +553,27 @@ BETA: LongEmbed index is in-memory; re-indexes every run.
         cache = mteb.ResultCache() if hasattr(mteb, "ResultCache") else None
         if cache is not None:
             print("  Using MTEB result cache (skip re-run for unchanged tasks).")
-    result = mteb.evaluate(
-        model=model,
-        tasks=tasks,
-        cache=cache,
-        overwrite_strategy=args.overwrite,
-        show_progress_bar=True,
-    )
+
+    def _run_eval(current_model):
+        return mteb.evaluate(
+            model=current_model,
+            tasks=tasks,
+            cache=cache,
+            overwrite_strategy=args.overwrite,
+            show_progress_bar=True,
+        )
+
+    try:
+        result = _run_eval(model)
+    except RuntimeError as e:
+        msg = str(e)
+        if args.device == "cuda" and "CublasError" in msg:
+            print("⚠️ CUDA/cuBLAS failed during evaluation (likely STS encoder path). "
+                  "Retrying the same tasks on CPU...")
+            model_cpu = load_model(device="cpu", output_dim=args.output_dim)
+            result = _run_eval(model_cpu)
+        else:
+            raise
     if output_dir is not None:
         _save_results_to_disk(result, output_dir)
     total_time = time.perf_counter() - t0

@@ -71,10 +71,49 @@ pub(crate) fn validate_activation(key: &str) -> bool {
 // PYTHON MODULE
 // =============================================================================
 
+/// Eagerly initialize CUDA + cuBLAS so that a subsequent PyTorch import
+/// does not corrupt the cuBLAS handle.  Call this **before** `import torch`.
+/// The created device is cached and reused by LamEngine.
+#[pyfunction]
+fn cuda_warmup() -> PyResult<()> {
+    #[cfg(feature = "cuda")]
+    {
+        use candle_core::{Device, Tensor, DType};
+
+        // Try to create a CUDA device and run a small matmul to force cuBLAS init
+        match Device::new_cuda(0) {
+            Ok(dev) => {
+                // Warm up cuBLAS with various matrix sizes to ensure all kernel
+                // paths are initialized before PyTorch can interfere.
+                for sz in [2, 32, 64, 128, 384] {
+                    let a = Tensor::zeros((1, sz, 384), DType::F32, &dev)
+                        .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(format!("{e}")))?;
+                    let b = Tensor::zeros((1, 384, sz), DType::F32, &dev)
+                        .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(format!("{e}")))?;
+                    let _ = a.matmul(&b)
+                        .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(format!("{e}")))?;
+                }
+                // Cache the device so LamEngine reuses this cuBLAS handle
+                model::set_warmed_up_device(dev);
+                eprintln!("📊 CUDA warmup: cuBLAS initialized successfully");
+            }
+            Err(e) => {
+                eprintln!("⚠️ CUDA warmup skipped (no GPU): {e:?}");
+            }
+        }
+    }
+    #[cfg(not(feature = "cuda"))]
+    {
+        eprintln!("⚠️ CUDA warmup skipped (not compiled with CUDA)");
+    }
+    Ok(())
+}
+
 /// Python module initialization
 #[pymodule]
 fn lam_candle(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<LamEngine>()?;
+    m.add_function(wrap_pyfunction!(cuda_warmup, m)?)?;
     m.add("__version__", "1.0.0")?;
     m.add("TIER_FREE", TIER_FREE)?;
     m.add("TIER_BETA", TIER_BETA)?;
