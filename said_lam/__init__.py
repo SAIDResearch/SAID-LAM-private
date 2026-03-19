@@ -20,7 +20,7 @@ import threading
 from typing import List, Optional, Tuple
 from pathlib import Path
 
-__version__ = "1.0.0"
+__version__ = "1.0.3"
 __author__ = "SAIDResearch"
 
 logger = logging.getLogger(__name__)
