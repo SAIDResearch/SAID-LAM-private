@@ -167,8 +167,10 @@ jobs:
           chmod +x /usr/local/bin/nvidia-smi
           /usr/local/bin/nvidia-smi --query-gpu=compute_cap --format=csv,noheader
 
-      - name: Rename package in pyproject.toml (Linux GPU)
-        run: sed -i 's/name = "said-lam"/name = "said-lam-gpu"/g' pyproject.toml
+      - name: Rename package for PyPI (Linux GPU)
+        run: |
+          sed -i 's/name = "said-lam"/name = "said-lam-gpu"/g' Cargo.toml
+          if [ -f "pyproject.toml" ]; then sed -i 's/name = "said-lam"/name = "said-lam-gpu"/g' pyproject.toml; fi
 
       - name: Build CUDA wheels
         run: |
@@ -284,15 +286,12 @@ jobs:
             echo "NVCC_PREPEND_FLAGS=$extraFlags" >> $env:GITHUB_ENV
           }
 
-      - name: Rename package in pyproject.toml (Windows GPU)
+      - name: Rename package for PyPI (Windows GPU)
         shell: pwsh
         run: |
-          $path = "pyproject.toml"
-          if (Test-Path $path) {
-            (Get-Content $path) -replace 'name = "said-lam"', 'name = "said-lam-gpu"' | Set-Content $path
-            Write-Host "Successfully updated $path"
-          } else {
-            Write-Host "No pyproject.toml found, skipping."
+          (Get-Content Cargo.toml) -replace 'name = "said-lam"', 'name = "said-lam-gpu"' | Set-Content Cargo.toml
+          if (Test-Path pyproject.toml) {
+            (Get-Content pyproject.toml) -replace 'name = "said-lam"', 'name = "said-lam-gpu"' | Set-Content pyproject.toml
           }
 
       - name: Build CUDA wheels (Windows)
@@ -415,9 +414,9 @@ jobs:
       - name: Publish to TestPyPI
         uses: pypa/gh-action-pypi-publish@release/v1
         with:
-          password: ${{ secrets.TEST_PYPI_API_TOKEN }}
           repository-url: https://test.pypi.org/legacy/
           packages-dir: dist/
+          verbose: true
 
   # ──────────────────────────────────────────────────────────────
   # GitHub Release
@@ -448,10 +447,11 @@ jobs:
   # ──────────────────────────────────────────────────────────────
   smoke-test:
     name: Smoke test · ${{ matrix.os }}
-    needs: [build-cpu]
+    needs: [build-cpu, build-metal]
     if: |
       always() && 
-      (needs.build-cpu.result == 'success') &&
+      !contains(needs.*.result, 'failure') && 
+      !contains(needs.*.result, 'cancelled') &&
       (github.event_name != 'workflow_dispatch' || inputs.job == 'all' || inputs.job == 'cpu-only' || inputs.job == 'smoke-test')
     runs-on: ${{ matrix.os }}
     strategy:
@@ -460,10 +460,13 @@ jobs:
         include:
           - os: ubuntu-22.04
             target: x86_64-unknown-linux-gnu
+            artifact_prefix: wheels-cpu
           - os: macos-latest
             target: aarch64-apple-darwin
+            artifact_prefix: wheels-metal
           - os: windows-latest
             target: x86_64-pc-windows-msvc
+            artifact_prefix: wheels-cpu
 
     steps:
       - name: Setup Python
@@ -474,19 +477,14 @@ jobs:
       - name: Download wheel
         uses: actions/download-artifact@v4
         with:
-          name: wheels-cpu-${{ matrix.target }}
+          name: ${{ matrix.artifact_prefix }}-${{ matrix.target }}
           path: dist
 
       - name: Install wheel
         shell: bash
         run: |
-          # 1. Force upgrade pip
           python -m pip install --upgrade pip
-
-          # 2. Install numpy explicitly from PyPI
           pip install numpy
-
-          # 3. Install the wheel by direct file path
           WHEEL=$(ls dist/*cp311*.whl | head -n 1)
           pip install "$WHEEL"
 
@@ -497,7 +495,6 @@ jobs:
           from lam_candle import LamEngine, TIER_FREE, TIER_BETA
           assert TIER_FREE == 1, f'TIER_FREE expected 1, got {TIER_FREE}'
           assert TIER_BETA == 2, f'TIER_BETA expected 2, got {TIER_BETA}'
-          # Verify LamEngine is constructable and has expected methods
           assert hasattr(LamEngine, 'search_kv'), 'Missing search_kv method'
           assert hasattr(LamEngine, 'index'), 'Missing index method'
           assert hasattr(LamEngine, 'doc_count'), 'Missing doc_count method'
