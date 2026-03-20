@@ -199,15 +199,38 @@ model-index:
             value: 0.5603
 ---
 
-# SAID-LAM-v1
+<p align="center"><code>SAIDResearch</code></p>
 
-**LAM (Linear Attention Models) — a new family beyond semantic transformers. SAID‑LAM‑v1 is Linear Attention Memory.**
+<h1 align="center">LAM</h1>
 
-*"The answer IS X. Because I Said so." — At ANY scale.*
+<p align="center"><code>SAID‑LAM‑v1</code></p>
 
-SAID-LAM-v1 is a 23.85M parameter embedding model with O(n) linear complexity. Where standard transformers rely on O(n²) attention that slows and runs out of memory as context grows, LAM models replace this entirely with a recurrent state update that runs in strict O(n) time and constant memory, defining a new direction separate from transformer-based semantic models.
+<p align="center"><img src="https://img.shields.io/badge/O(n)-Linear_Complexity-0f0f0f?style=flat-square" /></p>
 
-Distilled from [all-MiniLM-L6-v2](https://huggingface.co/sentence-transformers/all-MiniLM-L6-v2), while extending context from 512 tokens to **32K+ tokens** — and demonstrating 100% recall on LongEmbed Needle-in-a-Haystack benchmarks across evaluated scales.
+<p align="center">
+LAM (Linear Attention Models) — a new family beyond semantic transformers.<br>
+SAID‑LAM‑v1 is <strong>Linear Attention Memory</strong>.
+</p>
+
+<p align="center"><em>PHILOSOPHY: DETERMINISM OVER PROBABILITY</em></p>
+
+<p align="center"><em>"The answer IS X. Because I Said so." — At ANY scale</em></p>
+
+---
+
+## Menu
+
+1. [Quick-setup](#quick-setup)
+2. [MTEB testing (benchmarks)](#mteb-testing-benchmarks)
+3. [Model Details](#model-details)
+4. [Performance](#performance)
+5. [Drop-in sentence-transformers Replacement](#drop-in-sentence-transformers-replacement)
+6. [Usage](#usage)
+7. [API Reference](#api-reference)
+8. [Model Files](#model-files)
+9. [Citation](#citation)
+10. [Links](#links)
+
 
 ## Model Details
 
@@ -261,45 +284,107 @@ Spearman r = 0.8181 on the STS-B test set (1,379 sentence pairs):
 | LEMBQMSumRetrieval        | **85.76%**        | 83.70%                   |
 | LEMBWikimQARetrieval      | **93.98%**        | 91.20%                   |
 
-## Install
+## Quick-setup
+
+This quick setup ensures:
+
+- **Code is loaded from your pip-installed `said-lam` package** (not a local checkout).
+- **Weights are loaded from the Hugging Face cache** (auto-downloaded on first run).
+
+`venv` is the standard, recommended way to keep dependencies isolated. You *can* install globally, but using a virtual environment avoids conflicts.
+
+### macOS / Linux (bash, zsh)
 
 ```bash
+cd /path/to/your/project
+
+# 1) Create & activate a clean virtualenv
+python3 -m venv .venv
+. .venv/bin/activate
+python -m pip install --upgrade pip
+
+# 2) Install SAID-LAM (CPU)
 pip install said-lam
+
+# 3) Run the quick end-to-end sanity test (CPU)
+python said_quick_test.py
 ```
 
-CUDA (GPU) wheels are published under a separate PyPI project:
+### Windows (PowerShell)
 
-```bash
-pip install said-lam-gpu
+```powershell
+cd C:\path\to\your\project
+
+# 1) Create & activate a clean virtualenv
+py -m venv .venv
+.\.venv\Scripts\Activate.ps1
+py -m pip install --upgrade pip
+
+# 2) Install SAID-LAM (CPU)
+pip install said-lam
+
+# 3) Run the quick end-to-end sanity test (CPU)
+py .\said_quick_test.py
 ```
 
-To upgrade an existing installation to the latest version:
+If PowerShell blocks activation, run this once (then retry the activate step):
+
+```powershell
+Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser
+```
+
+GPU upgrade (CUDA) uses a separate package. **Uninstall CPU first to avoid namespace conflicts** (both use `import said_lam`):
 
 ```bash
-pip install --upgrade said-lam
-# or for the GPU version:
+pip uninstall -y said-lam
 pip install --upgrade said-lam-gpu
+
+# Run the same quick test on CUDA (if available)
+python said_quick_test.py
 ```
 
-To install a specific older version:
+Windows (PowerShell) equivalent:
+
+```powershell
+pip uninstall -y said-lam
+pip install --upgrade said-lam-gpu
+py .\said_quick_test.py
+```
+
+## MTEB testing (benchmarks)
+
+For full benchmark-style evaluation (STS tasks, LongEmbed retrieval tasks, cache controls, and result JSON export),
+use `mteb_test.py`. This is a heavier workflow than `said_quick_test.py` and is intended for evaluation/benchmarking:
+
+CPU:
 
 ```bash
-pip install said-lam==1.0.2
-# or for the GPU version:
-pip install said-lam-gpu==1.0.2
+. .venv/bin/activate
+pip install -r requirements.txt mteb
+
+# CPU smoke (fast coverage)
+python mteb_test.py --smoke --device cpu --no-cache --output-dir ./smoke_results_cpu
+
+# Example: run specific tasks
+python mteb_test.py --tasks STS12 STS13 --device cpu --no-cache --output-dir ./results_cpu
 ```
 
-To uninstall the package:
+GPU (CUDA):
 
 ```bash
-pip uninstall said-lam
-# or for the GPU version:
-pip uninstall said-lam-gpu
+. .venv/bin/activate
+pip uninstall -y said-lam
+pip install --upgrade said-lam-gpu
+pip install -r requirements.txt mteb
+
+# GPU smoke (fast coverage)
+python mteb_test.py --smoke --device cuda --no-cache --output-dir ./smoke_results_gpu
+
+# Example: run specific tasks
+python mteb_test.py --tasks STS12 STS13 --device cuda --no-cache --output-dir ./results_gpu
 ```
 
-**Note:** Both packages use the exact same `import said_lam` namespace. Please ensure you only have one of them installed at a time to avoid conflicts.
-
-On first use, model weights (~92 MB) are automatically downloaded from HuggingFace and cached locally. The pip package itself is only ~6 MB (compiled Rust binary — weights are NOT bundled).
+If no CUDA device is available in the current runtime, the GPU wheel may fall back to CPU automatically.
 
 ## Drop-in sentence-transformers Replacement
 
